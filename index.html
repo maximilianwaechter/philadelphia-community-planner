@@ -1,0 +1,1543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Philadelphia Community Area Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.20.2/dist/leaflet-geoman.css">
+<style>
+  :root {
+    --ink: #1C2433;
+    --ink-2: #505B6E;
+    --paper: #FFFFFF;
+    --panel: #F2F4F7;
+    --rule: #D6DCE4;
+    --rule-soft: #E8ECF1;
+    --plan: #6B2C91;       /* current plan: planning markup */
+    --harbor: #1F6F78;     /* saved plan being compared */
+    --cherry: #9D2235;     /* Temple University */
+    --police: #27407A;
+    --amber: #C98A1B;
+    --focus: #2B6CB0;
+    --font: 'Public Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--ink);
+    background: var(--panel);
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  .app { display: grid; grid-template-columns: minmax(340px, 410px) 1fr; height: 100%; }
+  #map { height: 100%; background: #E9ECEF; }
+  .leaflet-container { font-family: var(--font); }
+
+  .panel { background: var(--paper); border-right: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+  .brand { padding: 18px 20px 10px; }
+  .brand h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand p { margin: 2px 0 0; font-size: 13.5px; color: var(--ink-2); }
+
+  .tabs { display: flex; gap: 6px; padding: 0 14px; border-bottom: 1px solid var(--rule); }
+  .tab {
+    background: none; border: 0; border-bottom: 3px solid transparent; cursor: pointer;
+    padding: 10px 8px 8px; font-weight: 600; color: var(--ink-2);
+  }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .tab .count {
+    display: inline-block; min-width: 20px; margin-left: 4px; padding: 0 6px; border-radius: 10px;
+    background: var(--rule-soft); font-size: 12px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums;
+  }
+  .panels { flex: 1; overflow: auto; min-height: 0; }
+  .tabpanel { padding: 0 0 32px; }
+  .lead { margin: 0; padding: 14px 20px; font-size: 14px; color: var(--ink-2); max-width: 62ch; }
+
+  .btn {
+    border: 1px solid var(--ink); background: var(--ink); color: #fff; cursor: pointer;
+    border-radius: 6px; padding: 7px 12px; font-size: 14px; font-weight: 600; line-height: 1.2;
+  }
+  .btn:hover { background: #2C3850; }
+  .btn.plan { background: var(--plan); border-color: var(--plan); }
+  .btn.plan:hover { background: #5A2379; }
+  .btn.quiet { background: var(--paper); color: var(--ink); border-color: var(--rule); }
+  .btn.quiet:hover { border-color: var(--ink-2); }
+  .btn.small { padding: 4px 9px; font-size: 13px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  select.small { font-size: 13px; padding: 3px 6px; border: 1px solid var(--rule); border-radius: 5px; background: #fff; max-width: 100%; }
+  label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+
+  /* data layers */
+  .slot { display: grid; grid-template-columns: 16px 1fr; gap: 0 12px; padding: 14px 20px; border-top: 1px solid var(--rule); }
+  .key { width: 14px; height: 14px; margin-top: 4px; border: 2px solid var(--c); border-radius: 2px; background: color-mix(in srgb, var(--c) 20%, transparent); }
+  .key.point { border-radius: 50%; background: var(--c); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--c); }
+  .key.line { background: transparent; }
+  .slot h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .slot .help { margin: 1px 0 0; font-size: 13px; color: var(--ink-2); }
+  .slot .status { margin: 8px 0 0; font-size: 13.5px; }
+  .slot .status strong { font-weight: 600; }
+  .slot .controls { margin-top: 8px; }
+  .slot .controls + .controls { margin-top: 6px; }
+  .fieldnote { margin: 6px 0 0; font-size: 12.5px; color: var(--ink-2); }
+  .workspace { padding: 16px 20px; border-top: 1px solid var(--rule); background: var(--panel); }
+  .workspace h2 { margin: 0 0 2px; font-size: 15px; }
+  .workspace p { margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
+
+  /* plan */
+  .plan-head { padding: 16px 20px 6px; }
+  .plan-name {
+    width: 100%; border: 0; border-bottom: 2px solid transparent; background: transparent;
+    padding: 2px 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
+  }
+  .plan-name:hover, .plan-name:focus { border-bottom-color: var(--rule); outline: none; }
+  .plan-name:focus-visible { border-bottom-color: var(--focus); }
+  .plan-actions { padding: 6px 20px 14px; display: grid; gap: 8px; }
+  .area-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+  .area-row {
+    display: grid; grid-template-columns: 4px 1fr; gap: 0 12px; align-items: center;
+    padding: 8px 20px 8px 16px; border-bottom: 1px solid var(--rule-soft); cursor: pointer;
+  }
+  .area-row .bar { align-self: stretch; background: transparent; border-radius: 2px; }
+  .area-row.selected .bar { background: var(--plan); }
+  .area-row.selected { background: #F7F2FA; }
+  .area-name { width: 100%; border: 0; background: transparent; padding: 2px 0; font-weight: 600; border-bottom: 1px dashed transparent; }
+  .area-name:hover, .area-name:focus { border-bottom-color: var(--ink-2); outline: none; }
+  .area-meta { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .area-row .row { gap: 2px; }
+  .area-sub { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .area-sub .icon-btn { padding: 1px 6px; }
+  .icon-btn { border: 1px solid transparent; background: none; cursor: pointer; border-radius: 5px; padding: 3px 7px; font-size: 13px; color: var(--ink-2); }
+  .icon-btn:hover { border-color: var(--rule); color: var(--ink); }
+
+  .empty { margin: 0; padding: 18px 20px; color: var(--ink-2); font-size: 14px; max-width: 60ch; }
+  .empty strong { color: var(--ink); }
+
+  .details { padding: 6px 20px 0; }
+  .details-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 16px; }
+  .details-head h2 { margin: 0; font-size: 16px; }
+  .summary { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-2); }
+  .group h3 { margin: 18px 0 4px; font-size: 13.5px; font-weight: 700; }
+  .stats { display: grid; grid-template-columns: 1fr auto; margin: 0; }
+  .stats dt, .stats dd { margin: 0; padding: 5px 0; border-bottom: 1px solid var(--rule-soft); font-size: 14px; }
+  .stats dd { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; padding-left: 12px; }
+  .stats dd.list { font-weight: 500; text-align: right; max-width: 22ch; }
+  .note { margin: 16px 0 0; font-size: 12.5px; color: var(--ink-2); max-width: 64ch; }
+  .warn { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--amber); background: #FBF4E6; font-size: 13px; }
+
+  /* compare */
+  .cmp-head { padding: 16px 20px 4px; display: grid; gap: 10px; }
+  .legend-pair { display: grid; gap: 6px; }
+  .legend-pair div { display: flex; gap: 8px; align-items: center; font-size: 14px; font-weight: 600; }
+  .swatch { width: 18px; height: 12px; border-radius: 2px; flex: none; }
+  .swatch.cur { background: color-mix(in srgb, var(--plan) 22%, transparent); border: 2px solid var(--plan); }
+  .swatch.cmp { background: color-mix(in srgb, var(--harbor) 12%, transparent); border: 2px dashed var(--harbor); }
+  .table-wrap { overflow-x: auto; padding: 0 20px; }
+  table.cmp { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 12px; }
+  table.cmp th, table.cmp td { padding: 5px 4px; text-align: right; border-bottom: 1px solid var(--rule-soft); font-variant-numeric: tabular-nums; }
+  table.cmp th:first-child, table.cmp td:first-child { text-align: left; padding-left: 0; }
+  table.cmp thead th { font-size: 12.5px; font-weight: 600; color: var(--ink-2); border-bottom: 1.5px solid var(--ink); vertical-align: bottom; }
+  table.cmp thead th .swatch { display: block; margin: 0 0 4px auto; }
+  table.cmp tr.grp td { text-align: left; font-weight: 700; padding-top: 14px; border-bottom: 0; }
+  table.cmp td:not(:first-child) { white-space: nowrap; }
+  table.cmp td.diff { color: var(--ink-2); }
+  table.cmp td.diff.up, table.cmp td.diff.down { color: var(--ink); font-weight: 600; }
+
+  /* map extras */
+  .leaflet-tooltip.area-tag {
+    background: var(--plan); color: #fff; border: 0; border-radius: 3px; padding: 2px 7px;
+    font: 600 12px/1.3 var(--font); box-shadow: 0 1px 2px rgba(28, 36, 51, .35);
+  }
+  .leaflet-tooltip.area-tag::before, .leaflet-tooltip.compare-tag::before { display: none; }
+  .leaflet-tooltip.compare-tag {
+    background: #fff; color: var(--harbor); border: 1.5px solid var(--harbor); border-radius: 3px;
+    padding: 1px 6px; font: 600 12px/1.3 var(--font); box-shadow: none;
+  }
+  .leaflet-tooltip.ref-tip { font: 500 12.5px/1.35 var(--font); }
+  .map-legend { background: #fff; padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; box-shadow: 0 1px 4px rgba(28, 36, 51, .25); max-width: 220px; }
+  .map-legend strong { display: block; font-size: 12.5px; margin-bottom: 2px; }
+  .map-legend i { display: inline-block; width: 14px; height: 10px; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.15); }
+
+  #toasts { position: fixed; right: 60px; top: 12px; z-index: 2000; display: grid; gap: 8px; justify-items: end; pointer-events: none; }
+  .toast { pointer-events: auto; background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 6px; max-width: 380px; font-size: 14px; box-shadow: 0 4px 14px rgba(28, 36, 51, .25); }
+  .toast.error { background: #8A1C1C; }
+
+  @media (max-width: 820px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 46vh 1fr; }
+    #map { grid-row: 1; }
+    .panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--rule); }
+    .brand { display: none; }
+    .map-legend { font-size: 11px; line-height: 1.35; padding: 6px 8px; }
+    #toasts { right: 12px; left: 12px; justify-items: stretch; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel" aria-label="Planner controls">
+    <header class="brand">
+      <h1>Philadelphia Community Area Planner</h1>
+      <p>Explore reference layers, edit planning areas, and compare modeled demographics.</p>
+    </header>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tab-data" aria-controls="panel-data" aria-selected="true">Layers</button>
+      <button class="tab" role="tab" id="tab-plan" aria-controls="panel-plan" aria-selected="false">Plan<span class="count" id="plan-count">0</span></button>
+      <button class="tab" role="tab" id="tab-compare" aria-controls="panel-compare" aria-selected="false">Compare</button>
+    </nav>
+    <div class="panels">
+      <section class="tabpanel" id="panel-data" role="tabpanel" aria-labelledby="tab-data">
+        <p class="lead">The project's base GeoJSON layers load automatically from the <code>data/</code> folder. Toggle them here. Planning areas are editable in the Plan tab, and saved plans can be reopened or compared later.</p>
+        <div id="slots"></div>
+      </section>
+
+      <section class="tabpanel" id="panel-plan" role="tabpanel" aria-labelledby="tab-plan" hidden>
+        <div class="plan-head">
+          <label class="sr-only" for="plan-name">Plan name</label>
+          <input class="plan-name" id="plan-name" value="Untitled plan" autocomplete="off">
+        </div>
+        <div class="plan-actions">
+          <div class="row">
+            <button class="btn plan" id="btn-draw">Draw an area</button>
+            <button class="btn quiet" id="btn-import">Import areas</button>
+          </div>
+          <div class="row">
+            <button class="btn quiet small" id="btn-save-plan">Save plan</button>
+            <button class="btn quiet small" id="btn-open-plan">Open plan</button>
+            <button class="btn quiet small" id="btn-new-plan">New plan</button>
+          </div>
+        </div>
+        <ul class="area-list" id="area-list"></ul>
+        <div id="plan-empty" class="empty">
+          <strong>No areas yet.</strong> Draw one on the map, or import polygons of interest from a GeoJSON, shapefile, KML, or CSV. Outlines saved as lines, like My Maps polylines, are closed into areas.
+        </div>
+        <div class="details" id="details"></div>
+      </section>
+
+      <section class="tabpanel" id="panel-compare" role="tabpanel" aria-labelledby="tab-compare" hidden>
+        <div id="compare"></div>
+      </section>
+    </div>
+  </aside>
+  <main id="map" aria-label="Map"></main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<input type="file" id="file-generic" hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.20.2/dist/leaflet-geoman.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.2.0/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/shpjs@6.2.0/dist/shp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@7.1.2/dist/togeojson.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ * Configuration
+ * ------------------------------------------------------------------ */
+const ACCEPT = '.geojson,.json,.zip,.kml,.kmz,.csv';
+const STORE_KEY = 'phillyCommunityPlanner.plan.v2';
+const SQM_PER_SQMI = 2589988.11;
+const BASE_PLAN_URL = 'data/Polygons_of_interest.geojson';
+
+const C = {
+  plan: '#6B2C91', harbor: '#1F6F78', cherry: '#9D2235', police: '#27407A',
+  amber: '#C98A1B', tract: '#6B7686', building: '#8A919C', city: '#4E5968',
+  council: '#6F7A8A', residents: '#2F6F5E',
+};
+
+// Static project layers. GitHub Pages serves these from ./data/.
+// "optional" means the rest of the application still opens if the file is absent.
+const SLOTS = [
+  { key: 'city', title: 'Philadelphia City Limits', kind: 'area', color: C.city,
+    url: 'data/City_Limits.geojson', visible: true, analyzeOnClick: true,
+    help: 'Official city boundary and default map extent.' },
+  { key: 'council', title: 'Council Districts 2024', kind: 'area', color: C.council,
+    url: 'data/Council_districts_2024.geojson', visible: true, analyzeOnClick: true,
+    help: 'Click a district to calculate demographics for that district.' },
+  { key: 'police', title: 'TU Police Boundary', kind: 'area', color: C.police,
+    url: 'data/TU_police_boundary.geojson', visible: true, analyzeOnClick: true,
+    help: 'Temple University police patrol boundary.' },
+  { key: 'tuBuildings', title: 'TU Buildings', kind: 'area', color: C.cherry,
+    url: 'data/TU_buildings.geojson', visible: true,
+    help: 'Temple University building footprints.' },
+  { key: 'tuStations', title: 'TU Police Stations', kind: 'point', color: C.cherry,
+    url: 'data/TU_Police_Stations.geojson', visible: true,
+    help: 'Temple police/security locations.' },
+  { key: 'policeStations', title: 'Philadelphia Police Stations', kind: 'point', color: C.police,
+    url: 'data/Police_Stations.geojson', visible: true,
+    help: 'Philadelphia police station locations.' },
+  { key: 'schools', title: 'Schools of Interest', kind: 'point', color: C.amber,
+    url: 'data/Schools_of_Interest.geojson', visible: true,
+    help: 'Schools used as planning reference points.' },
+  { key: 'residents', title: 'Residential demographic model', kind: 'analysis', color: C.residents,
+    url: 'data/philly_building_points.geojson', visible: false, optional: true,
+    help: 'Hidden analysis points produced from OPA + building footprints + vacancy + ACS. Needed for demographic estimates.' },
+];
+
+// Building-level modeled fields created by the preprocessing script.
+// The UI continues to use the original ACS field names internally, but reads
+// estimated building fields whenever possible.
+const BUILDING_FIELD_MAP = {
+  pop_total: 'est_hh_pop',
+};
+const buildingField = field => BUILDING_FIELD_MAP[field] || `est_${field}`;
+
+// Field names match the ACS tract pull. During preprocessing, additive counts are
+// distributed to residential building points. The browser sums those building values;
+// medians remain household-weighted approximations.
+const COUNT_FIELDS = [
+  'pop_total', 'hh_occ', 'owner_occ', 'renter_occ', 'pov_univ', 'pov_below',
+  'race_total', 'white_nh', 'black_nh', 'asian_nh', 'hispanic',
+  'workers', 'drv_alone', 'pub_trans', 'bicycle', 'walked', 'wfh',
+  'veh_hh', 'no_vehicle', 'sch_univ', 'k12_enr', 'pop25plus', 'hs_grad',
+  'bachelors', 'masters', 'prof_deg', 'doctorate', 'labor_frc', 'employed', 'unemployed',
+  'hins_univ', 'dis_univ', 'lang_univ', 'inet_univ', 'under18', 'age65plus',
+  'm_under5', 'm_5_9', 'm_10_14', 'm_15_17', 'f_under5', 'f_5_9', 'f_10_14', 'f_15_17',
+  'm_65_66', 'm_67_69', 'm_70_74', 'm_75_79', 'm_80_84', 'm_85plus',
+  'f_65_66', 'f_67_69', 'f_70_74', 'f_75_79', 'f_80_84', 'f_85plus',
+];
+const MEDIAN_FIELDS = { med_hh_inc: 'hh_occ', med_rent: 'renter_occ', med_value: 'owner_occ' };
+
+const METRICS = [
+  { id: 'pop', prop: 'pop', group: 'People', label: 'Modeled household population', type: 'count', num: ['pop_total'] },
+  { id: 'under18', prop: 'pct_u18', group: 'People', label: 'Under 18', type: 'pct', num: ['under18'], den: ['pop_total'] },
+  { id: 'age65', prop: 'pct_65up', group: 'People', label: '65 and over', type: 'pct', num: ['age65plus'], den: ['pop_total'] },
+  { id: 'k12', prop: 'k12_enr', group: 'People', label: 'K\u201312 students', type: 'count', num: ['k12_enr'] },
+  { id: 'black', prop: 'pct_blk_nh', group: 'Race and ethnicity', label: 'Black, non-Hispanic', type: 'pct', num: ['black_nh'], den: ['race_total'] },
+  { id: 'white', prop: 'pct_wht_nh', group: 'Race and ethnicity', label: 'White, non-Hispanic', type: 'pct', num: ['white_nh'], den: ['race_total'] },
+  { id: 'hisp', prop: 'pct_hisp', group: 'Race and ethnicity', label: 'Hispanic or Latino', type: 'pct', num: ['hispanic'], den: ['race_total'] },
+  { id: 'asian', prop: 'pct_asn_nh', group: 'Race and ethnicity', label: 'Asian, non-Hispanic', type: 'pct', num: ['asian_nh'], den: ['race_total'] },
+  { id: 'income', prop: 'med_income', group: 'Income and housing', label: 'Median household income', type: 'money', num: ['med_hh_inc'] },
+  { id: 'poverty', prop: 'pct_pov', group: 'Income and housing', label: 'Below poverty level', type: 'pct', num: ['pov_below'], den: ['pov_univ'] },
+  { id: 'hh', prop: 'households', group: 'Income and housing', label: 'Households', type: 'count', num: ['hh_occ'] },
+  { id: 'renter', prop: 'pct_renter', group: 'Income and housing', label: 'Renter households', type: 'pct', num: ['renter_occ'], den: ['hh_occ'] },
+  { id: 'rent', prop: 'med_rent', group: 'Income and housing', label: 'Median gross rent', type: 'money', num: ['med_rent'] },
+  { id: 'value', prop: 'med_value', group: 'Income and housing', label: 'Median home value', type: 'money', num: ['med_value'] },
+  { id: 'nocar', prop: 'pct_no_car', group: 'Getting around', label: 'Households without a car', type: 'pct', num: ['no_vehicle'], den: ['veh_hh'] },
+  { id: 'transit', prop: 'pct_transit', group: 'Getting around', label: 'Commute by transit', type: 'pct', num: ['pub_trans'], den: ['workers'] },
+  { id: 'walk', prop: 'pct_walk', group: 'Getting around', label: 'Commute on foot', type: 'pct', num: ['walked'], den: ['workers'] },
+  { id: 'bike', prop: 'pct_bike', group: 'Getting around', label: 'Commute by bike', type: 'pct', num: ['bicycle'], den: ['workers'] },
+  { id: 'drive', prop: 'pct_drive', group: 'Getting around', label: 'Drive alone to work', type: 'pct', num: ['drv_alone'], den: ['workers'] },
+  { id: 'wfh', prop: 'pct_wfh', group: 'Getting around', label: 'Work from home', type: 'pct', num: ['wfh'], den: ['workers'] },
+  { id: 'ba', prop: 'pct_ba_up', group: 'Education and work', label: 'Bachelor\u2019s degree or higher', type: 'pct', num: ['bachelors', 'masters', 'prof_deg', 'doctorate'], den: ['pop25plus'] },
+  { id: 'hs', prop: 'pct_hs_only', group: 'Education and work', label: 'High school diploma as highest level', type: 'pct', num: ['hs_grad'], den: ['pop25plus'] },
+  { id: 'unemp', prop: 'pct_unemp', group: 'Education and work', label: 'Unemployment rate', type: 'pct', num: ['unemployed'], den: ['employed', 'unemployed'] },
+];
+const IGNORE_FIELD = /^(objectid|fid|ogc_fid|gid|id|shape_?(length|leng|area)|st_area.*|st_length.*|aland|awater|intptlat|intptlon|statefp|countyfp|tractce|geoid|mtfcc|funcstat|lat|lon|lng|latitude|longitude|x|y)$/i;
+
+proj4.defs('EPSG:2272', '+proj=lcc +lat_1=40.96666666666667 +lat_2=39.93333333333333 +lat_0=39.33333333333334 +lon_0=-77.75 +x_0=600000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=us-ft +no_defs');
+proj4.defs('EPSG:32129', '+proj=lcc +lat_1=40.96666666666667 +lat_2=39.93333333333333 +lat_0=39.33333333333334 +lon_0=-77.75 +x_0=600000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs');
+const CRS_NAMES = { 2272: 'PA State Plane South (feet)', 32129: 'PA State Plane South (meters)', 3857: 'Web Mercator' };
+
+/* ------------------------------------------------------------------ *
+ * Small helpers
+ * ------------------------------------------------------------------ */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const toNum = v => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v.replace(/,/g, '')))) return Number(v.replace(/,/g, ''));
+  return NaN;
+};
+const bboxHit = (a, b) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+const inBbox = (p, b) => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
+const isPoly = g => g && (g.type === 'Polygon' || g.type === 'MultiPolygon');
+const feature = geometry => ({ type: 'Feature', properties: {}, geometry });
+const slug = s => (s || 'plan').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'plan';
+const today = () => new Date().toISOString().slice(0, 10);
+
+function toast(msg, kind = 'info', ms = 5200) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind === 'error' ? ' error' : '');
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), kind === 'error' ? ms + 3000 : ms);
+}
+
+function download(name, text, type = 'application/geo+json') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function pickFile(accept = ACCEPT) {
+  return new Promise(resolve => {
+    const input = $('#file-generic');
+    input.accept = accept; input.value = '';
+    input.onchange = () => resolve(input.files[0] || null);
+    input.click();
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Reading files into WGS84 GeoJSON
+ * ------------------------------------------------------------------ */
+function mapCoords(geom, fn) {
+  const walk = c => (typeof c[0] === 'number' ? fn(c) : c.map(walk));
+  return { type: geom.type, coordinates: walk(geom.coordinates) };
+}
+function firstCoord(geom) {
+  let c = geom.coordinates;
+  while (Array.isArray(c) && typeof c[0] !== 'number') c = c[0];
+  return Array.isArray(c) ? c : null;
+}
+
+function sourceCRS(fc) {
+  const named = fc.crs && fc.crs.properties && fc.crs.properties.name;
+  if (named && !/CRS84/i.test(named)) {
+    const m = String(named).match(/(\d{4,6})\D*$/);
+    const code = m && Number(m[1]);
+    if ([4326, 4269, 4258, 4152].includes(code)) return null;
+    if (CRS_NAMES[code]) return code;
+    if (code) throw new Error(`This file uses EPSG:${code}, which the planner can't convert. Export it as WGS84 (EPSG:4326) and try again.`);
+  }
+  const sample = fc.features.slice(0, 25).map(f => firstCoord(f.geometry)).find(Boolean);
+  if (!sample) return null;
+  const [x, y] = sample;
+  if (Math.abs(x) <= 180 && Math.abs(y) <= 90) return null;
+  if (x < -1e6 && y > 1e6) return 3857;
+  if (x > 1.5e6 && x < 4e6) return 2272;
+  if (x > 2e5 && x <= 1.5e6) return 32129;
+  throw new Error('The coordinates in this file are in a projection the planner doesn\u2019t recognize. Export it as WGS84 (EPSG:4326) and try again.');
+}
+
+function normalizeFC(fc) {
+  const out = [];
+  for (const f of fc.features || []) {
+    if (!f || !f.geometry) continue;
+    const props = f.properties || {};
+    const geoms = f.geometry.type === 'GeometryCollection' ? f.geometry.geometries : [f.geometry];
+    for (const g of geoms) {
+      if (!g || !g.coordinates || !['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'].includes(g.type)) continue;
+      out.push({ type: 'Feature', properties: props, geometry: mapCoords(g, c => [Number(c[0]), Number(c[1])]) });
+    }
+  }
+  const result = { type: 'FeatureCollection', features: out };
+  const code = sourceCRS({ crs: fc.crs, features: out });
+  if (code) {
+    const from = code === 3857 ? 'EPSG:3857' : `EPSG:${code}`;
+    for (const f of out) f.geometry = mapCoords(f.geometry, c => proj4(from, 'EPSG:4326', c));
+    result.reprojectedFrom = code;
+  }
+  result.features = result.features.filter(f => {
+    const c = firstCoord(f.geometry);
+    return c && Number.isFinite(c[0]) && Number.isFinite(c[1]);
+  });
+  return result;
+}
+
+function parseWKT(text) {
+  if (typeof text !== 'string') return null;
+  const s = text.trim().replace(/^SRID=\d+;/i, '');
+  const m = s.match(/^(MULTIPOLYGON|POLYGON|MULTILINESTRING|LINESTRING|MULTIPOINT|POINT)\s*(?:ZM|Z|M)?\s*(\(.*\))\s*$/is);
+  if (!m) return null;
+  const num = '-?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?';
+  const body = m[2]
+    .replace(new RegExp(`${num}(?:\\s+${num})+`, 'g'), t => '[' + t.trim().split(/\s+/).join(',') + ']')
+    .replace(/\(/g, '[').replace(/\)/g, ']');
+  let coords;
+  try { coords = JSON.parse(body); } catch { return null; }
+  const type = { POINT: 'Point', MULTIPOINT: 'MultiPoint', LINESTRING: 'LineString', MULTILINESTRING: 'MultiLineString', POLYGON: 'Polygon', MULTIPOLYGON: 'MultiPolygon' }[m[1].toUpperCase()];
+  if (type === 'Point') coords = coords[0];
+  if (type === 'MultiPoint') coords = coords.map(c => (Array.isArray(c[0]) ? c[0] : c));
+  return { type, coordinates: coords };
+}
+
+function csvToFC(text) {
+  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+  const fields = parsed.meta.fields || [];
+  const rows = parsed.data;
+  if (!rows.length) throw new Error('This CSV has no rows.');
+  const wktCol = fields.find(f => /^(wkt|geometry|the_geom|shape|geom)$/i.test(f) && parseWKT(rows[0][f]))
+    || fields.find(f => parseWKT(rows[0][f]));
+  const features = [];
+  if (wktCol) {
+    for (const r of rows) {
+      const g = parseWKT(r[wktCol]);
+      if (!g) continue;
+      const props = { ...r }; delete props[wktCol];
+      features.push({ type: 'Feature', properties: props, geometry: g });
+    }
+  } else {
+    const lat = fields.find(f => /^(lat|latitude|y|point_y|ycoord|y_coord)$/i.test(f));
+    const lon = fields.find(f => /^(lon|lng|long|longitude|x|point_x|xcoord|x_coord)$/i.test(f));
+    if (!lat || !lon) throw new Error('This CSV needs latitude and longitude columns (or X and Y), or a WKT geometry column.');
+    for (const r of rows) {
+      const x = toNum(r[lon]), y = toNum(r[lat]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const props = { ...r }; delete props[lat]; delete props[lon];
+      features.push({ type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [x, y] } });
+    }
+  }
+  if (!features.length) throw new Error('No rows in this CSV had usable coordinates or geometry.');
+  return { type: 'FeatureCollection', features };
+}
+
+function kmlToFC(text) {
+  const dom = new DOMParser().parseFromString(text, 'text/xml');
+  if (dom.getElementsByTagName('parsererror').length) throw new Error('This KML file couldn\u2019t be read.');
+  return toGeoJSON.kml(dom);
+}
+
+function toFC(obj) {
+  if (Array.isArray(obj)) return { type: 'FeatureCollection', features: obj.filter(f => f && f.type === 'Feature') };
+  if (obj.type === 'FeatureCollection') return obj;
+  if (obj.type === 'Feature') return { type: 'FeatureCollection', features: [obj] };
+  if (obj.type && obj.coordinates) return { type: 'FeatureCollection', features: [feature(obj)] };
+  if (obj.type === 'GeometryCollection') return { type: 'FeatureCollection', features: [feature(obj)] };
+  throw new Error('This JSON file isn\u2019t GeoJSON. In ArcGIS Pro, use Features To JSON with "Output to GeoJSON" and "Project to WGS_1984" checked.');
+}
+
+async function readGeoFile(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  let raw = null, fc;
+  if (ext === 'zip') {
+    const out = await shp(await file.arrayBuffer());
+    const list = Array.isArray(out) ? out : [out];
+    fc = { type: 'FeatureCollection', features: list.flatMap(x => x.features || []) };
+  } else if (ext === 'kmz') {
+    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const kml = Object.values(zip.files).find(f => /\.kml$/i.test(f.name));
+    if (!kml) throw new Error('There\u2019s no .kml file inside this KMZ.');
+    fc = kmlToFC(await kml.async('string'));
+  } else if (ext === 'kml') {
+    fc = kmlToFC(await file.text());
+  } else if (ext === 'csv' || ext === 'txt') {
+    fc = csvToFC(await file.text());
+  } else if (ext === 'geojson' || ext === 'json') {
+    try { raw = JSON.parse(await file.text()); } catch { throw new Error(`${file.name} isn\u2019t valid JSON.`); }
+    if (raw && raw.app === 'area-planner-workspace') return { workspace: raw };
+    fc = toFC(raw);
+  } else {
+    throw new Error(`The planner can\u2019t read .${ext} files. Use GeoJSON, a zipped shapefile, KML or KMZ, or CSV.`);
+  }
+  const norm = normalizeFC(fc);
+  if (!norm.features.length) throw new Error(`${file.name} has no features the planner can map.`);
+  return { fc: norm, meta: raw && raw.planner ? raw.planner : null };
+}
+
+/* ------------------------------------------------------------------ *
+ * Map
+ * ------------------------------------------------------------------ */
+const map = L.map('map', { zoomControl: true }).setView([39.9812, -75.1553], 14);
+const basemaps = {
+  'Streets (light)': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 20,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  }),
+  'Aerial': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
+  }),
+};
+basemaps['Streets (light)'].addTo(map);
+L.control.layers(basemaps, null, { position: 'topright' }).addTo(map);
+L.control.scale({ imperial: true, metric: false }).addTo(map);
+
+[['tractsPane', 350], ['buildingsPane', 360], ['templePane', 370], ['policePane', 380], ['comparePane', 390], ['pointsPane', 450]]
+  .forEach(([name, z]) => { map.createPane(name).style.zIndex = z; });
+const buildingRenderer = L.canvas({ pane: 'buildingsPane', padding: 0.3 });
+
+map.pm.addControls({
+  position: 'topleft', drawMarker: false, drawCircleMarker: false, drawPolyline: false,
+  drawCircle: false, drawText: false, rotateMode: false,
+});
+map.pm.setGlobalOptions({ pathOptions: { color: C.plan, weight: 2.5, fillColor: C.plan, fillOpacity: 0.14 } });
+
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = () => { const d = L.DomUtil.create('div', 'map-legend'); d.hidden = true; return d; };
+legend.addTo(map);
+
+/* ------------------------------------------------------------------ *
+ * State
+ * ------------------------------------------------------------------ */
+const state = {
+  layers: {},          // key -> { fc, fileName, labelField, visible, leaflet, index }
+  plan: { name: 'Untitled plan', areas: [] },
+  compare: null,       // { name, areas: [{ name, geometry }], layer, visible, saved }
+  selected: null,      // area id or null (whole plan)
+  choro: '',
+  dataRev: 0,
+  tractFields: { counts: [], medians: [], other: [] }, // retained name for metric compatibility; now describes building-model fields
+};
+let nextId = 1;
+const statsCache = new Map();
+
+/* ------------------------------------------------------------------ *
+ * Reference + analysis layers
+ * ------------------------------------------------------------------ */
+function guessLabelField(fc, key) {
+  const props = fc.features[0] ? Object.keys(fc.features[0].properties || {}) : [];
+  const prefs = {
+    city: [/^name$/i, /city/i],
+    council: [/district/i, /^name$/i, /dist/i],
+    police: [/^name$/i, /boundary/i, /district/i],
+    tuBuildings: [/^name$/i, /^bldg/i, /^building/i, /^address/i],
+    tuStations: [/^location$/i, /^name$/i, /station/i],
+    policeStations: [/^location$/i, /^name$/i, /district/i, /station/i],
+    schools: [/school_?name/i, /^name$/i, /^facil/i, /school/i],
+    residents: [/^fp_address$/i, /^address$/i, /^building_id$/i],
+  }[key] || [/^name$/i];
+  for (const re of prefs) { const hit = props.find(p => re.test(p)); if (hit) return hit; }
+  return props.find(p => fc.features.some(f => typeof (f.properties || {})[p] === 'string')) || '';
+}
+const labelOf = (f, field) => {
+  const v = field ? (f.properties || {})[field] : '';
+  return v === undefined || v === null || v === '' ? '' : String(v);
+};
+
+function slotStyle(slot) {
+  switch (slot.key) {
+    case 'city': return { pane: 'tractsPane', color: C.city, weight: 2, opacity: 0.9, fillOpacity: 0 };
+    case 'council': return { pane: 'tractsPane', color: C.council, weight: 1.4, opacity: 0.9, fillColor: C.council, fillOpacity: 0.035 };
+    case 'police': return { pane: 'policePane', color: C.police, weight: 2.2, opacity: 0.95, dashArray: '7 5', fillColor: C.police, fillOpacity: 0.035 };
+    case 'tuBuildings': return { pane: 'buildingsPane', renderer: buildingRenderer, color: '#7D2638', weight: 0.7, fillColor: C.cherry, fillOpacity: 0.24 };
+    case 'residents': return { pane: 'pointsPane', color: C.residents, weight: 1, fillOpacity: 0.6 };
+    default: return { pane: 'pointsPane', color: slot.color, weight: 1.5, fillOpacity: 0.3 };
+  }
+}
+
+function referencePopup(slot, f) {
+  const entry = state.layers[slot.key];
+  const name = labelOf(f, entry && entry.labelField) || slot.title.replace(/s$/, '');
+  if (!slot.analyzeOnClick || !isPoly(f.geometry)) return `<strong>${esc(name)}</strong>`;
+  const r = analyze(f.geometry);
+  if (!r.demo || !r.demo.buildingsUsed) {
+    return `<strong>${esc(name)}</strong><br><span style="color:#505B6E">Demographic model is not loaded, or no modeled residences fall inside this feature.</span>`;
+  }
+  const wanted = ['pop', 'hh', 'under18', 'age65', 'poverty', 'renter', 'income'];
+  const metrics = availableMetrics().filter(m => wanted.includes(m.id));
+  return `<strong>${esc(name)}</strong><div style="margin-top:6px">${metrics.map(m =>
+    `<div style="display:flex;gap:12px;justify-content:space-between"><span>${esc(m.label)}</span><b>${esc(fmt(m, metricValue(m, r.demo.vals)))}</b></div>`
+  ).join('')}</div><div style="margin-top:6px;color:#505B6E;font-size:12px">Modeled from ${r.demo.buildingsUsed.toLocaleString()} residential building point${r.demo.buildingsUsed === 1 ? '' : 's'}.</div>`;
+}
+
+function buildLeaflet(slot, entry) {
+  const style = slotStyle(slot);
+  const layer = L.geoJSON(entry.fc, {
+    pmIgnore: true, snapIgnore: slot.key === 'tuBuildings' || slot.key === 'residents',
+    pane: style.pane, renderer: style.renderer,
+    style: f => (f.geometry.type === 'Point' || f.geometry.type === 'MultiPoint'
+      ? { pane: 'pointsPane', color: '#fff', weight: 1.2, opacity: 1, fillColor: slot.color, fillOpacity: slot.key === 'residents' ? 0.45 : 1 }
+      : style),
+    pointToLayer: (f, ll) => L.circleMarker(ll, {
+      pane: 'pointsPane', pmIgnore: true,
+      radius: slot.key === 'residents' ? 2.2 : (slot.key.includes('Stations') ? 6.5 : 5),
+      color: '#fff', weight: slot.key === 'residents' ? 0.4 : 1.5,
+      fillColor: slot.color, fillOpacity: slot.key === 'residents' ? 0.45 : 1,
+    }),
+    onEachFeature: (f, l) => {
+      if (slot.key !== 'residents') l.bindTooltip(() => tipFor(slot, f), { sticky: true, className: 'ref-tip' });
+      if (slot.analyzeOnClick && isPoly(f.geometry)) {
+        l.on('click', ev => {
+          L.popup({ maxWidth: 360 }).setLatLng(ev.latlng).setContent(referencePopup(slot, f)).openOn(map);
+        });
+      }
+    },
+  });
+  return layer;
+}
+
+function tipFor(slot, f) {
+  const entry = state.layers[slot.key];
+  return esc(labelOf(f, entry && entry.labelField) || slot.title.replace(/s$/, ''));
+}
+
+function rawModelVals(f) {
+  const p = f.properties || {}, out = {};
+  for (const k of COUNT_FIELDS) {
+    const v = toNum(p[buildingField(k)]);
+    if (Number.isFinite(v) && v >= 0) out[k] = v;
+  }
+  for (const k of Object.keys(MEDIAN_FIELDS)) {
+    const v = toNum(p[k]);
+    if (Number.isFinite(v) && v >= 0) out[k] = v;
+  }
+  for (const k of ['res_units_model', 'active_res_capacity', 'population_eligible', 'vpi_vacant', 'vacant_any', 'has_residential']) {
+    const v = toNum(p[k]);
+    if (Number.isFinite(v)) out[k] = v;
+  }
+  return out;
+}
+
+function detectModelFields(fc) {
+  const n = fc.features.length || 1;
+  const numericShare = {};
+  for (const f of fc.features) {
+    for (const [k, v] of Object.entries(f.properties || {})) {
+      if (Number.isFinite(toNum(v))) numericShare[k] = (numericShare[k] || 0) + 1 / n;
+    }
+  }
+  const numeric = new Set(Object.keys(numericShare).filter(k => numericShare[k] >= 0.25));
+  const counts = COUNT_FIELDS.filter(k => numeric.has(buildingField(k)));
+  const medians = Object.keys(MEDIAN_FIELDS).filter(k => numeric.has(k));
+  state.tractFields = { counts, medians, other: [] };
+}
+
+function prepIndex(key, fc, labelField) {
+  const slot = SLOTS.find(s => s.key === key);
+  if (key === 'residents') {
+    return fc.features.map(f => {
+      let pt;
+      try { pt = f.geometry.type === 'Point' ? f.geometry.coordinates : turf.pointOnFeature(f).geometry.coordinates; } catch { pt = null; }
+      return pt ? { pt, label: labelOf(f, labelField), vals: rawModelVals(f), f } : null;
+    }).filter(Boolean);
+  }
+  if (slot && slot.kind === 'point') {
+    return fc.features.map(f => {
+      let pt;
+      try { pt = f.geometry.type === 'Point' ? f.geometry.coordinates : turf.pointOnFeature(f).geometry.coordinates; } catch { pt = null; }
+      return pt ? { pt, label: labelOf(f, labelField), f } : null;
+    }).filter(Boolean);
+  }
+  return fc.features.map(f => {
+    let g = f.geometry;
+    if (g && (g.type === 'LineString' || g.type === 'MultiLineString')) g = linesToPolygon(g);
+    if (!g || !isPoly(g)) return null;
+    const ff = { type: 'Feature', properties: f.properties, geometry: g };
+    return { f: ff, bbox: turf.bbox(ff), label: labelOf(f, labelField) };
+  }).filter(Boolean);
+}
+
+function setSlot(key, fc, fileName, opts = {}) {
+  const slot = SLOTS.find(s => s.key === key);
+  if (!slot) return;
+  const old = state.layers[key];
+  if (old && old.leaflet) map.removeLayer(old.leaflet);
+  const entry = {
+    fc, fileName,
+    labelField: opts.labelField && fc.features.some(f => f.properties && opts.labelField in f.properties) ? opts.labelField : guessLabelField(fc, key),
+    visible: opts.visible !== undefined ? opts.visible : slot.visible !== false,
+  };
+  state.layers[key] = entry;
+  if (key === 'residents') detectModelFields(fc);
+  entry.index = prepIndex(key, fc, entry.labelField);
+  entry.leaflet = buildLeaflet(slot, entry);
+  if (entry.visible) entry.leaflet.addTo(map);
+  state.dataRev++; statsCache.clear();
+  renderSlots(); scheduleUpdate();
+}
+
+async function fetchGeoJSON(url) {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  const raw = await response.json();
+  return normalizeFC(raw);
+}
+
+async function loadBaseLayers() {
+  const results = await Promise.all(SLOTS.map(async slot => {
+    try {
+      const fc = await fetchGeoJSON(slot.url);
+      setSlot(slot.key, fc, slot.url.replace(/^data\//, ''), { visible: slot.visible !== false });
+      return { slot, ok: true };
+    } catch (err) {
+      console.warn(`Could not load ${slot.url}`, err);
+      if (!slot.optional) toast(`Could not load ${slot.url}. Check that the file is in the GitHub data folder.`, 'error', 7000);
+      return { slot, ok: false };
+    }
+  }));
+  const city = state.layers.city && state.layers.city.leaflet;
+  if (city && city.getBounds && city.getBounds().isValid() && !state.plan.areas.length) {
+    map.fitBounds(city.getBounds(), { padding: [18, 18], maxZoom: 12 });
+  }
+  return results;
+}
+
+async function loadBasePlan() {
+  try {
+    const fc = await fetchGeoJSON(BASE_PLAN_URL);
+    const { areas } = areasFromFC(fc);
+    if (!areas.length) return;
+    state.plan.name = 'Base planning areas';
+    $('#plan-name').value = state.plan.name;
+    areas.forEach(a => addArea(a.name, a.geometry, { quiet: true }));
+    state.selected = null;
+    scheduleUpdate();
+  } catch (err) {
+    console.warn(`Could not load ${BASE_PLAN_URL}`, err);
+    toast(`Could not load ${BASE_PLAN_URL}. You can still draw or import planning areas.`, 'error', 6500);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Analysis
+ * ------------------------------------------------------------------ */
+function cleanAoi(geometry) {
+  let f = feature(geometry);
+  try {
+    if (geometry.type === 'Polygon' && turf.kinks(f).features.length) {
+      const parts = turf.unkinkPolygon(f);
+      const u = parts.features.length > 1 ? turf.union(parts) : parts.features[0];
+      if (u) f = feature(u.geometry);
+    }
+  } catch (e) { /* keep original */ }
+  return f;
+}
+
+function safeIntersect(a, b) {
+  try { return turf.intersect(turf.featureCollection([a, b])); } catch { return null; }
+}
+
+function aggregateResidential(aoi) {
+  const entry = state.layers.residents;
+  if (!entry || !entry.index) return null;
+  const bb = turf.bbox(aoi);
+  const { counts, medians } = state.tractFields;
+  const sums = {}, medAcc = {};
+  let buildingsUsed = 0, residentialUnits = 0, vacantBuildings = 0;
+
+  for (const b of entry.index) {
+    if (!inBbox(b.pt, bb)) continue;
+    let inside = false;
+    try { inside = turf.booleanPointInPolygon(turf.point(b.pt), aoi); } catch { inside = false; }
+    if (!inside) continue;
+
+    const v = b.vals || {};
+    const eligible = Number.isFinite(v.population_eligible) ? v.population_eligible > 0 : (Number.isFinite(v.active_res_capacity) ? v.active_res_capacity > 0 : true);
+    if (eligible) buildingsUsed++;
+    if (Number.isFinite(v.active_res_capacity)) residentialUnits += v.active_res_capacity;
+    else if (Number.isFinite(v.res_units_model) && eligible) residentialUnits += v.res_units_model;
+    if ((Number.isFinite(v.vacant_any) && v.vacant_any > 0) || (Number.isFinite(v.vpi_vacant) && v.vpi_vacant > 0)) vacantBuildings++;
+
+    for (const k of counts) {
+      if (Number.isFinite(v[k])) sums[k] = (sums[k] || 0) + v[k];
+    }
+    for (const k of medians) {
+      const med = v[k];
+      if (!Number.isFinite(med)) continue;
+      const wf = MEDIAN_FIELDS[k];
+      const w = wf && Number.isFinite(v[wf]) ? v[wf] : (Number.isFinite(v.pop_total) ? v.pop_total : 0);
+      if (w <= 0) continue;
+      medAcc[k] = medAcc[k] || { s: 0, w: 0 };
+      medAcc[k].s += med * w;
+      medAcc[k].w += w;
+    }
+  }
+  for (const [k, a] of Object.entries(medAcc)) sums[k] = a.w > 0 ? a.s / a.w : NaN;
+  return { vals: sums, buildingsUsed, residentialUnits, vacantBuildings, source: 'residential-buildings' };
+}
+
+function analyze(geometry) {
+  const aoi = cleanAoi(geometry);
+  const areaM2 = turf.area(aoi);
+  const bb = turf.bbox(aoi);
+  let center;
+  try { center = turf.centroid(aoi); } catch { center = null; }
+  const r = { sqmi: areaM2 / SQM_PER_SQMI, demo: aggregateResidential(aoi) };
+  const L_ = state.layers;
+
+  const overlapAreas = key => {
+    const idx = L_[key] ? L_[key].index : null;
+    if (!idx || areaM2 <= 0) return null;
+    return idx.filter(p => p.bbox && bboxHit(bb, p.bbox)).map(p => {
+      const inter = safeIntersect(p.f, aoi);
+      return inter ? { label: p.label || 'Unnamed', share: turf.area(inter) / areaM2 } : null;
+    }).filter(x => x && x.share >= 0.005).sort((a, b) => b.share - a.share);
+  };
+
+  const pointsIn = key => {
+    const idx = L_[key] ? L_[key].index : null;
+    if (!idx) return null;
+    return idx.filter(p => inBbox(p.pt, bb) && turf.booleanPointInPolygon(turf.point(p.pt), aoi));
+  };
+
+  r.council = overlapAreas('council');
+  r.police = overlapAreas('police');
+  r.tuStations = pointsIn('tuStations');
+  r.policeStations = pointsIn('policeStations');
+  r.schools = pointsIn('schools');
+
+  const nearestAcross = keys => {
+    if (!center) return null;
+    let best = null;
+    for (const key of keys) {
+      const idx = L_[key] ? L_[key].index : null;
+      if (!idx) continue;
+      for (const p of idx) {
+        const d = turf.distance(center, turf.point(p.pt), { units: 'miles' });
+        if (!best || d < best.d) best = { d, label: p.label, layer: key };
+      }
+    }
+    return best;
+  };
+  r.nearestStation = nearestAcross(['tuStations', 'policeStations']);
+
+  if (L_.tuBuildings && L_.tuBuildings.index) {
+    let overlap = 0;
+    for (const p of L_.tuBuildings.index) {
+      if (!p.bbox || !bboxHit(bb, p.bbox)) continue;
+      const inter = safeIntersect(p.f, aoi);
+      if (inter) overlap += turf.area(inter);
+    }
+    r.temple = { share: areaM2 > 0 ? Math.min(1, overlap / areaM2) : 0 };
+  }
+  return r;
+}
+
+function areaStats(area) {
+  const key = `${area.id}|${area.rev}|${state.dataRev}`;
+  if (!statsCache.has(key)) statsCache.set(key, analyze(area.geometry));
+  return statsCache.get(key);
+}
+
+function unionGeometry(areas) {
+  const polys = areas.map(a => feature(a.geometry)).filter(f => isPoly(f.geometry));
+  if (!polys.length) return null;
+  if (polys.length === 1) return polys[0].geometry;
+  try { const u = turf.union(turf.featureCollection(polys)); return u ? u.geometry : null; } catch { return null; }
+}
+
+function planStats(which) {
+  const plan = which === 'compare' ? state.compare : state.plan;
+  if (!plan || !plan.areas.length) return null;
+  const rev = plan.areas.map(a => `${a.id || a.name}:${a.rev || 0}`).join(',');
+  const key = `${which}|${rev}|${state.dataRev}`;
+  if (statsCache.has(key)) return statsCache.get(key);
+  const g = unionGeometry(plan.areas);
+  const r = g ? analyze(g) : null;
+  if (r) r.areaCount = plan.areas.length;
+  statsCache.set(key, r);
+  return r;
+}
+
+function metricValue(m, vals) {
+  if (!vals) return null;
+  const sum = fields => {
+    let s = 0;
+    for (const f of fields) { if (!Number.isFinite(vals[f])) return null; s += vals[f]; }
+    return s;
+  };
+  if (m.type === 'count' || m.type === 'money' || m.type === 'density') return sum(m.num);
+  const n = sum(m.num), d = sum(m.den);
+  return n === null || d === null || d <= 0 ? null : (n / d) * 100;
+}
+const availableMetrics = () => {
+  const have = new Set([...state.tractFields.counts, ...state.tractFields.medians]);
+  return METRICS.filter(m => [...m.num, ...(m.den || [])].every(f => have.has(f)));
+};
+
+function fmt(m, v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '\u2013';
+  if (!m || m.type === 'count') return Math.round(v).toLocaleString('en-US');
+  if (m.type === 'pct') return v.toFixed(1) + '%';
+  if (m.type === 'money') { const step = v >= 10000 ? 100 : 10; return '$' + (Math.round(v / step) * step).toLocaleString('en-US'); }
+  if (m.type === 'density') return Math.round(v).toLocaleString('en-US');
+  return String(v);
+}
+function fmtDiff(m, d) {
+  if (d === null || !Number.isFinite(d)) return '\u2013';
+  const sign = d > 0 ? '+' : d < 0 ? '\u2212' : '';
+  const a = Math.abs(d);
+  if (m.type === 'pct') return a < 0.05 ? 'same' : `${sign}${a.toFixed(1)} pts`;
+  if (m.type === 'money') { const step = a >= 10000 ? 100 : 10; return Math.round(a / step) === 0 ? 'same' : `${sign}$${(Math.round(a / step) * step).toLocaleString('en-US')}`; }
+  if (m.type === 'sqmi') return a < 0.005 ? 'same' : `${sign}${a.toFixed(2)}`;
+  return Math.round(a) === 0 ? 'same' : `${sign}${Math.round(a).toLocaleString('en-US')}`;
+}
+const sqmi = v => (v < 0.1 ? v.toFixed(3) : v.toFixed(2)) + ' sq mi';
+
+/* ------------------------------------------------------------------ *
+ * Plan areas on the map
+ * ------------------------------------------------------------------ */
+const areaStyle = a => ({
+  color: C.plan, weight: state.selected === a.id ? 3.5 : 2.2, opacity: 1,
+  fillColor: C.plan, fillOpacity: state.selected === a.id ? 0.24 : 0.12,
+});
+
+function drawArea(a) {
+  if (a.layer) map.removeLayer(a.layer);
+  const layer = L.GeoJSON.geometryToLayer(feature(a.geometry), {});
+  layer.setStyle(areaStyle(a));
+  layer._areaId = a.id;
+  layer.bindTooltip(esc(a.name), { permanent: true, direction: 'center', className: 'area-tag', interactive: false });
+  layer.on('click', () => select(a.id, true));
+  layer.on('pm:edit pm:dragend pm:rotateend', () => {
+    if (a.layer !== layer || !map.hasLayer(layer)) return; // stale layer, e.g. just replaced by a cut
+    a.geometry = layer.toGeoJSON().geometry; a.rev++; scheduleUpdate();
+  });
+  layer.addTo(map);
+  a.layer = layer;
+}
+
+function addArea(name, geometry, { quiet = false } = {}) {
+  const a = { id: nextId++, name: name || `Area ${state.plan.areas.length + 1}`, geometry, rev: 0, layer: null };
+  state.plan.areas.push(a);
+  drawArea(a);
+  if (!quiet) { select(a.id); scheduleUpdate(); }
+  return a;
+}
+
+function removeArea(id, { fromMap = false } = {}) {
+  const i = state.plan.areas.findIndex(a => a.id === id);
+  if (i < 0) return;
+  const [a] = state.plan.areas.splice(i, 1);
+  if (!fromMap && a.layer) map.removeLayer(a.layer);
+  if (state.selected === id) state.selected = null;
+  scheduleUpdate();
+}
+
+function clearPlan() {
+  for (const a of state.plan.areas) if (a.layer) map.removeLayer(a.layer);
+  state.plan.areas = []; state.selected = null;
+}
+
+function select(id, fromMap = false) {
+  state.selected = id;
+  for (const a of state.plan.areas) if (a.layer) a.layer.setStyle(areaStyle(a));
+  if (fromMap) showTab('plan');
+  scheduleUpdate();
+}
+
+function linesToPolygon(g) {
+  const lines = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
+  const rings = lines.filter(l => l.length >= 3).map(l => {
+    const ring = l.slice();
+    const [a, b] = [ring[0], ring[ring.length - 1]];
+    if (a[0] !== b[0] || a[1] !== b[1]) ring.push(a);
+    return ring;
+  }).filter(r => r.length >= 4);
+  if (!rings.length) return null;
+  return rings.length === 1 ? { type: 'Polygon', coordinates: [rings[0]] } : { type: 'MultiPolygon', coordinates: rings.map(r => [r]) };
+}
+
+function areasFromFC(fc) {
+  let converted = 0, skipped = 0;
+  const out = [];
+  fc.features.forEach(f => {
+    let g = f.geometry;
+    if (g.type === 'LineString' || g.type === 'MultiLineString') { g = linesToPolygon(g); if (g) converted++; }
+    if (!g || !isPoly(g)) { skipped++; return; }
+    const p = f.properties || {};
+    const name = p.name ?? p.Name ?? p.NAME ?? p.title ?? p.label ?? p.area_name ?? '';
+    out.push({ name: String(name || '').trim(), geometry: g, color: p.color });
+  });
+  return { areas: out, converted, skipped };
+}
+
+map.on('pm:create', e => {
+  const g = e.layer.toGeoJSON().geometry;
+  map.removeLayer(e.layer);
+  addArea(null, g);
+  showTab('plan');
+});
+map.on('pm:remove', e => { if (e.layer && e.layer._areaId) removeArea(e.layer._areaId, { fromMap: true }); });
+map.on('pm:cut', e => {
+  const id = e.originalLayer && e.originalLayer._areaId;
+  if (!id) return;
+  const a = state.plan.areas.find(x => x.id === id);
+  if (!a) return;
+  const g = e.layer && e.layer.toGeoJSON ? e.layer.toGeoJSON().geometry : null;
+  if (e.layer) map.removeLayer(e.layer);
+  if (!g || !isPoly(g)) { removeArea(id); return; }
+  a.geometry = g; a.rev++; a.layer = null; drawArea(a); scheduleUpdate();
+});
+
+/* ------------------------------------------------------------------ *
+ * Saving and opening plans
+ * ------------------------------------------------------------------ */
+function planFeatureCollection() {
+  const metrics = availableMetrics();
+  return {
+    type: 'FeatureCollection',
+    planner: { app: 'area-planner', version: 1, name: state.plan.name, saved: new Date().toISOString() },
+    features: state.plan.areas.map(a => {
+      const r = areaStats(a);
+      const props = { name: a.name, sq_mi: Number(r.sqmi.toFixed(4)) };
+      if (r.demo) for (const m of metrics) {
+        const v = metricValue(m, r.demo.vals);
+        if (v !== null) props[m.prop] = Number(v.toFixed(m.type === 'pct' ? 2 : 0));
+      }
+      if (r.stations) props.stations_in = r.stations.length;
+      if (r.schools) props.schools_in = r.schools.length;
+      if (r.buildings) props.buildings_in = r.buildings.length;
+      return { type: 'Feature', properties: props, geometry: a.geometry };
+    }),
+  };
+}
+
+function savePlan() {
+  if (!state.plan.areas.length) return toast('Add at least one area before saving the plan.', 'error');
+  download(`${slug(state.plan.name)}_${today()}.geojson`, JSON.stringify(planFeatureCollection()));
+  toast(`Saved \u201c${state.plan.name}.\u201d Open it later with Open plan, or load it in Compare.`);
+}
+
+async function importAreas({ replace = false } = {}) {
+  const file = await pickFile();
+  if (!file) return;
+  try {
+    const res = await readGeoFile(file);
+    if (res.workspace) return openWorkspace(res.workspace);
+    const { areas, converted, skipped } = areasFromFC(res.fc);
+    if (!areas.length) throw new Error(`${file.name} has no polygons or outlines to use as areas.`);
+    if (replace) {
+      clearPlan();
+      state.plan.name = (res.meta && res.meta.name) || file.name.replace(/\.[^.]+$/, '');
+      $('#plan-name').value = state.plan.name;
+    }
+    areas.forEach(a => addArea(a.name, a.geometry, { quiet: true }));
+    state.selected = null;
+    fitTo(state.plan.areas.map(a => a.layer));
+    showTab('plan'); scheduleUpdate();
+    const bits = [`${replace ? 'Opened' : 'Added'} ${areas.length} area${areas.length === 1 ? '' : 's'}.`];
+    if (converted) bits.push(`Closed ${converted} outline${converted === 1 ? '' : 's'} drawn as lines.`);
+    if (skipped) bits.push(`Skipped ${skipped} point${skipped === 1 ? '' : 's'}.`);
+    toast(bits.join(' '));
+  } catch (err) {
+    console.error(err);
+    toast(err.message || `Couldn\u2019t read ${file.name}.`, 'error');
+  }
+}
+
+async function loadCompare() {
+  const file = await pickFile();
+  if (!file) return;
+  try {
+    const res = await readGeoFile(file);
+    if (res.workspace) throw new Error('That\u2019s a workspace file. Use Open workspace in the Data tab, or pick a saved plan.');
+    const { areas } = areasFromFC(res.fc);
+    if (!areas.length) throw new Error(`${file.name} has no polygons or outlines to compare.`);
+    setCompare({
+      name: (res.meta && res.meta.name) || file.name.replace(/\.[^.]+$/, ''),
+      saved: res.meta && res.meta.saved,
+      areas: areas.map((a, i) => ({ name: a.name || `Area ${i + 1}`, geometry: a.geometry, id: `c${i}`, rev: 0 })),
+    });
+    showTab('compare');
+    toast(`Loaded \u201c${state.compare.name}\u201d for comparison.`);
+  } catch (err) {
+    console.error(err);
+    toast(err.message || `Couldn\u2019t read ${file.name}.`, 'error');
+  }
+}
+
+function setCompare(c) {
+  if (state.compare && state.compare.layer) map.removeLayer(state.compare.layer);
+  state.compare = c;
+  if (c) {
+    c.visible = c.visible !== false;
+    c.layer = L.geoJSON({ type: 'FeatureCollection', features: c.areas.map(a => ({ type: 'Feature', properties: { name: a.name }, geometry: a.geometry })) }, {
+      pane: 'comparePane', pmIgnore: true,
+      style: { color: C.harbor, weight: 2.2, dashArray: '6 5', fillColor: C.harbor, fillOpacity: 0.07 },
+      onEachFeature: (f, l) => l.bindTooltip(esc(f.properties.name), { direction: 'top', className: 'compare-tag' }),
+    });
+    if (c.visible) c.layer.addTo(map);
+  }
+  scheduleUpdate();
+}
+
+function fitTo(layers) {
+  const b = L.latLngBounds([]);
+  layers.filter(Boolean).forEach(l => { if (l.getBounds) b.extend(l.getBounds()); });
+  if (b.isValid()) map.fitBounds(b, { padding: [30, 30], maxZoom: 17 });
+}
+
+/* workspace */
+function saveWorkspace() {
+  const ws = {
+    app: 'area-planner-workspace', version: 1, saved: new Date().toISOString(),
+    choro: state.choro,
+    layers: Object.fromEntries(Object.entries(state.layers).map(([k, e]) => [k, {
+      fileName: e.fileName, labelField: e.labelField, visible: e.visible,
+      fc: { type: 'FeatureCollection', features: e.fc.features },
+    }])),
+    plan: { name: state.plan.name, areas: state.plan.areas.map(a => ({ name: a.name, geometry: a.geometry })) },
+    compare: state.compare ? { name: state.compare.name, saved: state.compare.saved, areas: state.compare.areas.map(a => ({ name: a.name, geometry: a.geometry })) } : null,
+  };
+  if (!Object.keys(ws.layers).length && !ws.plan.areas.length) return toast('There\u2019s nothing to save yet. Add a layer or an area first.', 'error');
+  download(`area_planner_workspace_${today()}.json`, JSON.stringify(ws), 'application/json');
+  toast('Saved the workspace.');
+}
+
+function openWorkspace(ws) {
+  try {
+    Object.keys(state.layers).forEach(k => clearSlot(k));
+    for (const s of SLOTS) {
+      const l = ws.layers && ws.layers[s.key];
+      if (l && l.fc && l.fc.features && l.fc.features.length) {
+        setSlot(s.key, normalizeFC(l.fc), l.fileName || 'workspace', { labelField: l.labelField, visible: l.visible, choro: s.key === 'tracts' ? ws.choro : undefined });
+      }
+    }
+    clearPlan();
+    state.plan.name = (ws.plan && ws.plan.name) || 'Untitled plan';
+    $('#plan-name').value = state.plan.name;
+    ((ws.plan && ws.plan.areas) || []).forEach(a => addArea(a.name, a.geometry, { quiet: true }));
+    setCompare(ws.compare && ws.compare.areas && ws.compare.areas.length
+      ? { name: ws.compare.name, saved: ws.compare.saved, areas: ws.compare.areas.map((a, i) => ({ ...a, id: `c${i}`, rev: 0 })) }
+      : null);
+    const all = [...Object.values(state.layers).map(e => e.visible ? e.leaflet : null), ...state.plan.areas.map(a => a.layer)];
+    fitTo(state.plan.areas.length ? state.plan.areas.map(a => a.layer) : all);
+    scheduleUpdate();
+    toast('Opened the workspace.');
+  } catch (err) {
+    console.error(err);
+    toast('This workspace file couldn\u2019t be opened. ' + (err.message || ''), 'error');
+  }
+}
+
+function autosave() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      name: state.plan.name, areas: state.plan.areas.map(a => ({ name: a.name, geometry: a.geometry })),
+    }));
+  } catch (e) { /* storage full or unavailable */ }
+}
+
+function exportCSV() {
+  const metrics = availableMetrics();
+  const other = state.tractFields.other;
+  const header = ['plan', 'area', 'sq_mi', ...metrics.map(m => m.prop), 'police_areas', 'stations_in', 'schools_in', 'buildings_in', ...other];
+  const rowFor = (label, r) => [
+    state.plan.name, label, r.sqmi.toFixed(4),
+    ...metrics.map(m => { const v = r.demo ? metricValue(m, r.demo.vals) : null; return v === null ? '' : v.toFixed(m.type === 'pct' ? 2 : 0); }),
+    r.police ? r.police.map(p => `${p.label} (${Math.round(p.share * 100)}%)`).join('; ') : '',
+    r.stations ? r.stations.length : '', r.schools ? r.schools.length : '', r.buildings ? r.buildings.length : '',
+    ...other.map(k => (r.demo && Number.isFinite(r.demo.vals[k]) ? r.demo.vals[k].toFixed(2) : '')),
+  ];
+  const rows = state.plan.areas.map(a => rowFor(a.name, areaStats(a)));
+  const total = planStats('plan');
+  if (total) rows.push(rowFor('Whole plan', total));
+  const csv = [header, ...rows].map(r => r.map(v => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(',')).join('\n');
+  download(`${slug(state.plan.name)}_demographics_${today()}.csv`, csv, 'text/csv');
+}
+
+/* ------------------------------------------------------------------ *
+ * Rendering
+ * ------------------------------------------------------------------ */
+function showTab(name) {
+  for (const t of ['data', 'plan', 'compare']) {
+    $(`#tab-${t}`).setAttribute('aria-selected', String(t === name));
+    $(`#panel-${t}`).hidden = t !== name;
+  }
+}
+$$('.tab').forEach(t => t.addEventListener('click', () => showTab(t.id.replace('tab-', ''))));
+
+function renderSlots() {
+  $('#slots').innerHTML = SLOTS.map(s => {
+    const e = state.layers[s.key];
+    const keyCls = s.kind === 'point' || s.kind === 'analysis' ? 'key point' : 'key';
+    let body = `<p class="help">${esc(s.help)}</p>`;
+    if (e) {
+      const props = e.fc.features[0] ? Object.keys(e.fc.features[0].properties || {}) : [];
+      body += `<p class="status"><strong>${e.fc.features.length.toLocaleString()}</strong> features loaded</p>
+        <div class="row controls">
+          <label class="inline"><input type="checkbox" data-act="toggle" ${e.visible ? 'checked' : ''}> Show</label>
+          ${s.key === 'residents' ? '' : `<label class="inline">Label
+            <select class="small" data-act="label">
+              <option value="">None</option>
+              ${props.map(p => `<option value="${esc(p)}" ${p === e.labelField ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+            </select></label>`}
+        </div>
+        <div class="row controls"><button class="btn quiet small" data-act="zoom">Zoom to</button></div>`;
+      if (s.key === 'residents') {
+        body += `<p class="fieldnote">Demographics use ${state.tractFields.counts.length} modeled count field${state.tractFields.counts.length === 1 ? '' : 's'}${state.tractFields.medians.length ? ` and ${state.tractFields.medians.length} tract-median field${state.tractFields.medians.length === 1 ? '' : 's'}` : ''}.</p>`;
+      }
+    } else {
+      body += `<p class="status">${s.optional ? 'Optional analysis file not found.' : 'File not loaded.'}</p><p class="fieldnote">Expected: <code>${esc(s.url)}</code></p>`;
+    }
+    return `<div class="slot" data-key="${s.key}"><span class="${keyCls}" style="--c:${s.color}"></span>
+      <div><h2>${esc(s.title)}</h2>${body}</div></div>`;
+  }).join('');
+}
+
+$('#slots').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn || btn.tagName === 'SELECT' || btn.type === 'checkbox') return;
+  const key = btn.closest('.slot').dataset.key;
+  if (btn.dataset.act === 'zoom') fitTo([state.layers[key] && state.layers[key].leaflet]);
+});
+$('#slots').addEventListener('change', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const key = el.closest('.slot').dataset.key;
+  const entry = state.layers[key];
+  if (!entry) return;
+  if (el.dataset.act === 'toggle') {
+    entry.visible = el.checked;
+    if (entry.visible) entry.leaflet.addTo(map); else map.removeLayer(entry.leaflet);
+  }
+  if (el.dataset.act === 'label') {
+    entry.labelField = el.value;
+    entry.index = prepIndex(key, entry.fc, entry.labelField);
+    state.dataRev++; statsCache.clear(); scheduleUpdate();
+  }
+});
+
+let listIds = '';
+function renderPlanList() {
+  const areas = state.plan.areas;
+  $('#plan-count').textContent = areas.length;
+  $('#plan-empty').hidden = areas.length > 0;
+  const ids = areas.map(a => a.id).join(',');
+  const list = $('#area-list');
+  if (ids !== listIds) {
+    listIds = ids;
+    list.innerHTML = areas.map(a => `
+      <li class="area-row" data-id="${a.id}">
+        <span class="bar"></span>
+        <div>
+          <input class="area-name" value="${esc(a.name)}" aria-label="Area name">
+          <div class="area-sub">
+            <span class="area-meta"></span>
+            <span class="row">
+              <button class="icon-btn" data-act="zoom">Zoom</button>
+              <button class="icon-btn" data-act="remove">Remove</button>
+            </span>
+          </div>
+        </div>
+      </li>`).join('');
+  }
+  for (const a of areas) {
+    const li = list.querySelector(`[data-id="${a.id}"]`);
+    if (!li) continue;
+    li.classList.toggle('selected', state.selected === a.id);
+    const r = areaStats(a);
+    const pop = r.demo && Number.isFinite(r.demo.vals.pop_total) ? `, about ${fmt(null, r.demo.vals.pop_total)} people` : '';
+    li.querySelector('.area-meta').textContent = sqmi(r.sqmi) + pop;
+  }
+}
+
+$('#area-list').addEventListener('click', e => {
+  const li = e.target.closest('.area-row');
+  if (!li) return;
+  const id = Number(li.dataset.id);
+  const a = state.plan.areas.find(x => x.id === id);
+  const act = e.target.closest('[data-act]');
+  if (act && act.dataset.act === 'remove') { removeArea(id); return; }
+  if (act && act.dataset.act === 'zoom') { fitTo([a.layer]); select(id); return; }
+  if (!e.target.classList.contains('area-name')) select(id);
+});
+$('#area-list').addEventListener('input', e => {
+  if (!e.target.classList.contains('area-name')) return;
+  const id = Number(e.target.closest('.area-row').dataset.id);
+  const a = state.plan.areas.find(x => x.id === id);
+  a.name = e.target.value;
+  if (a.layer) a.layer.setTooltipContent(esc(a.name || 'Unnamed area'));
+  renderDetailsSoon(); autosave();
+});
+$('#area-list').addEventListener('focusin', e => {
+  if (!e.target.classList.contains('area-name')) return;
+  const id = Number(e.target.closest('.area-row').dataset.id);
+  if (state.selected !== id) select(id);
+});
+
+function statsBlock(r) {
+  if (!state.layers.residents) return `<p class="empty" style="padding:12px 0">The residential demographic model is not loaded. Add <code>data/philly_building_points.geojson</code> to enable demographic estimates.</p>`;
+  if (!r.demo || !r.demo.buildingsUsed) return `<p class="empty" style="padding:12px 0">No population-eligible modeled residential buildings fall inside this area.</p>`;
+  const metrics = availableMetrics();
+  const groups = [...new Set(metrics.map(m => m.group))];
+  let html = groups.map(g => `<div class="group"><h3>${esc(g)}</h3><dl class="stats">${
+    metrics.filter(m => m.group === g).map(m => `<dt>${esc(m.label)}</dt><dd>${esc(fmt(m, metricValue(m, r.demo.vals)))}</dd>`).join('')
+  }</dl></div>`).join('');
+  html += `<div class="group"><h3>Residential model</h3><dl class="stats">
+    <dt>Modeled residential buildings</dt><dd>${r.demo.buildingsUsed.toLocaleString()}</dd>
+    <dt>Modeled residential-unit capacity</dt><dd>${Math.round(r.demo.residentialUnits || 0).toLocaleString()}</dd>
+    <dt>Likely vacant buildings inside</dt><dd>${(r.demo.vacantBuildings || 0).toLocaleString()}</dd>
+  </dl></div>`;
+  return html;
+}
+
+function listNames(items, max = 6) {
+  const names = items.map(p => p.label).filter(Boolean);
+  if (!names.length) return '';
+  const shown = names.slice(0, max).map(esc).join(', ');
+  return names.length > max ? `${shown}, and ${names.length - max} more` : shown;
+}
+
+function contextBlock(r) {
+  const rows = [];
+  if (r.council) rows.push(['Council districts', r.council.length
+    ? r.council.map(p => `${esc(p.label)} (${Math.round(p.share * 100)}%)`).join(', ') : 'None overlap', true]);
+  if (r.police) rows.push(['TU Police Boundary', r.police.length
+    ? r.police.map(p => `${esc(p.label)} (${Math.round(p.share * 100)}%)`).join(', ') : 'No overlap', true]);
+  if (r.tuStations) rows.push(['TU police/security locations inside', r.tuStations.length ? `${r.tuStations.length}${listNames(r.tuStations) ? ': ' + listNames(r.tuStations) : ''}` : 'None', !!r.tuStations.length]);
+  if (r.policeStations) rows.push(['Philadelphia police stations inside', r.policeStations.length ? `${r.policeStations.length}${listNames(r.policeStations) ? ': ' + listNames(r.policeStations) : ''}` : 'None', !!r.policeStations.length]);
+  if (r.nearestStation) rows.push(['Nearest police/security location', `${esc(r.nearestStation.label || 'Unnamed')}, ${r.nearestStation.d.toFixed(2)} mi from the center`, true]);
+  if (r.schools) rows.push(['Schools inside', r.schools.length ? `${r.schools.length}${listNames(r.schools) ? ': ' + listNames(r.schools) : ''}` : 'None', !!r.schools.length]);
+  if (r.temple) rows.push(['TU building footprint overlap', `${(r.temple.share * 100).toFixed(r.temple.share < 0.01 ? 1 : 0)}% of the area`, false]);
+  if (!rows.length) return '';
+  return `<div class="group"><h3>In and around this area</h3><dl class="stats">${
+    rows.map(([k, v, isList]) => `<dt>${esc(k)}</dt><dd${isList ? ' class="list"' : ''}>${v}</dd>`).join('')
+  }</dl></div>`;
+}
+
+let detailTimer = null;
+function renderDetailsSoon() { clearTimeout(detailTimer); detailTimer = setTimeout(renderDetails, 120); }
+
+function renderDetails() {
+  const box = $('#details');
+  const areas = state.plan.areas;
+  if (!areas.length) { box.innerHTML = ''; return; }
+  const sel = areas.find(a => a.id === state.selected);
+  const r = sel ? areaStats(sel) : planStats('plan');
+  if (!r) { box.innerHTML = ''; return; }
+  const scope = `<label class="sr-only" for="scope">Show results for</label>
+    <select class="small" id="scope">
+      <option value="">Whole plan</option>
+      ${areas.map(a => `<option value="${a.id}" ${a.id === state.selected ? 'selected' : ''}>${esc(a.name || 'Unnamed area')}</option>`).join('')}
+    </select>`;
+  const title = sel ? esc(sel.name || 'Unnamed area') : 'Whole plan';
+  const summary = sel
+    ? `${sqmi(r.sqmi)}${r.demo && r.demo.buildingsUsed ? `, modeled from ${r.demo.buildingsUsed.toLocaleString()} residential building point${r.demo.buildingsUsed === 1 ? '' : 's'}` : ''}.`
+    : `${areas.length} area${areas.length === 1 ? '' : 's'} covering ${sqmi(r.sqmi)}. Overlapping areas are only counted once.`;
+  box.innerHTML = `
+    <div class="details-head"><h2>${title}</h2>${scope}</div>
+    <p class="summary">${summary}</p>
+    ${statsBlock(r)}
+    ${contextBlock(r)}
+    <p class="note">Estimates split each tract\u2019s ACS counts by how much of the tract\u2019s area falls inside, which assumes people are spread evenly across the tract. Medians are weighted averages of tract medians, so treat them as rough.</p>
+    <div class="row" style="margin-top:12px"><button class="btn quiet small" id="btn-csv">Download results (CSV)</button></div>`;
+  $('#scope').addEventListener('change', e => select(e.target.value ? Number(e.target.value) : null));
+  $('#btn-csv').addEventListener('click', exportCSV);
+}
+
+function renderCompare() {
+  const box = $('#compare');
+  const c = state.compare;
+  if (!c) {
+    box.innerHTML = `<p class="empty"><strong>Compare with a saved plan.</strong> Load a plan file you saved earlier, or any file of polygons. Both plans are measured against the same residential-building demographic model, so differences come from the plan boundaries.</p>
+      <div style="padding:0 20px"><button class="btn" id="btn-load-cmp">Load saved plan</button></div>`;
+    $('#btn-load-cmp').addEventListener('click', loadCompare);
+    return;
+  }
+  const cur = planStats('plan');
+  const old = planStats('compare') || { sqmi: null, areaCount: c.areas.length, demo: null };
+  const savedOn = c.saved ? ` Saved ${new Date(c.saved).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.` : '';
+  let table = '';
+  if (!cur) {
+    table = `<p class="empty">Add areas in the Plan tab to compare them with \u201c${esc(c.name)}.\u201d</p>`;
+  } else {
+    const metrics = availableMetrics();
+    const row = (label, m, a, b) => {
+      const d = a !== null && b !== null && Number.isFinite(a) && Number.isFinite(b) ? a - b : null;
+      const cls = d === null ? '' : d > 0 ? ' up' : d < 0 ? ' down' : '';
+      return `<tr><td>${esc(label)}</td><td>${esc(m.type === 'sqmi' ? (a === null ? '\u2013' : a.toFixed(2)) : fmt(m, a))}</td><td>${esc(m.type === 'sqmi' ? (b === null ? '\u2013' : b.toFixed(2)) : fmt(m, b))}</td><td class="diff${cls}">${esc(fmtDiff(m, d))}</td></tr>`;
+    };
+    let rows = `<tr class="grp"><td colspan="4">Size</td></tr>`;
+    rows += row('Areas', { type: 'count' }, cur.areaCount, old.areaCount);
+    rows += row('Square miles', { type: 'sqmi' }, cur.sqmi, old.sqmi);
+    if (cur.demo && old.demo) {
+      for (const g of [...new Set(metrics.map(m => m.group))]) {
+        rows += `<tr class="grp"><td colspan="4">${esc(g)}</td></tr>`;
+        for (const m of metrics.filter(x => x.group === g)) rows += row(m.label, m, metricValue(m, cur.demo.vals), metricValue(m, old.demo.vals));
+      }
+      
+    }
+    const ctx = [];
+    if (cur.tuStations && old.tuStations) ctx.push(['TU police/security locations inside', cur.tuStations.length, old.tuStations.length]);
+    if (cur.policeStations && old.policeStations) ctx.push(['Philadelphia police stations inside', cur.policeStations.length, old.policeStations.length]);
+    if (cur.schools && old.schools) ctx.push(['Schools inside', cur.schools.length, old.schools.length]);
+    if (cur.temple && old.temple) ctx.push(['TU building footprint overlap', cur.temple.share * 100, old.temple.share * 100, 'pct']);
+    if (ctx.length) {
+      rows += `<tr class="grp"><td colspan="4">In and around</td></tr>`;
+      ctx.forEach(([l, a, b, t]) => { rows += row(l, { type: t || 'count' }, a, b); });
+    }
+    table = `<div class="table-wrap"><table class="cmp">
+      <thead><tr><th scope="col"></th>
+        <th scope="col"><span class="swatch cur"></span>${esc(state.plan.name)}</th>
+        <th scope="col"><span class="swatch cmp"></span>${esc(c.name)}</th>
+        <th scope="col">Difference</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+      ${!state.layers.residents ? '<p class="empty">The residential demographic model is not loaded, so demographic comparison is unavailable.</p>' : ''}
+      <p class="note" style="padding:0 20px">Difference is the current plan minus the saved plan. Percentages differ in points.</p>`;
+  }
+  box.innerHTML = `
+    <div class="cmp-head">
+      <div class="legend-pair">
+        <div><span class="swatch cur"></span>${esc(state.plan.name)} (current)</div>
+        <div><span class="swatch cmp"></span>${esc(c.name)}</div>
+      </div>
+      <p class="summary" style="margin:0">${c.areas.length} saved area${c.areas.length === 1 ? '' : 's'}: ${esc(c.areas.map(a => a.name).join(', '))}.${savedOn}</p>
+      <div class="row">
+        <label class="inline"><input type="checkbox" id="cmp-visible" ${c.visible ? 'checked' : ''}> Show saved plan on map</label>
+      </div>
+      <div class="row">
+        <button class="btn quiet small" id="btn-cmp-zoom">Zoom to both</button>
+        <button class="btn quiet small" id="btn-cmp-replace">Load a different plan</button>
+        <button class="btn quiet small" id="btn-cmp-clear">Stop comparing</button>
+      </div>
+    </div>${table}`;
+  $('#cmp-visible').addEventListener('change', e => {
+    c.visible = e.target.checked;
+    if (c.visible) c.layer.addTo(map); else map.removeLayer(c.layer);
+  });
+  $('#btn-cmp-zoom').addEventListener('click', () => fitTo([c.layer, ...state.plan.areas.map(a => a.layer)]));
+  $('#btn-cmp-replace').addEventListener('click', loadCompare);
+  $('#btn-cmp-clear').addEventListener('click', () => setCompare(null));
+}
+
+let updateTimer = null;
+function scheduleUpdate() {
+  clearTimeout(updateTimer);
+  updateTimer = setTimeout(() => {
+    for (const a of state.plan.areas) if (a.layer) a.layer.setStyle(areaStyle(a));
+    renderPlanList(); renderDetails(); renderCompare(); autosave();
+  }, 60);
+}
+
+/* ------------------------------------------------------------------ *
+ * Wiring
+ * ------------------------------------------------------------------ */
+$('#plan-name').addEventListener('input', e => { state.plan.name = e.target.value || 'Untitled plan'; renderCompareSoon(); autosave(); });
+let cmpTimer = null;
+function renderCompareSoon() { clearTimeout(cmpTimer); cmpTimer = setTimeout(renderCompare, 200); }
+
+$('#btn-draw').addEventListener('click', () => {
+  map.pm.enableDraw('Polygon', { snappable: true });
+  toast('Click the map to place corners. Click the first corner again to finish.');
+});
+$('#btn-import').addEventListener('click', () => importAreas());
+$('#btn-open-plan').addEventListener('click', () => importAreas({ replace: true }));
+$('#btn-save-plan').addEventListener('click', savePlan);
+$('#btn-new-plan').addEventListener('click', () => {
+  if (state.plan.areas.length && !confirm('Start a new plan? Save this one first if you want to keep it.')) return;
+  clearPlan(); state.plan.name = 'Untitled plan'; $('#plan-name').value = state.plan.name; scheduleUpdate();
+});
+
+async function initializeApp() {
+  renderSlots();
+  await loadBaseLayers();
+
+  let restored = false;
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (saved && saved.areas && saved.areas.length) {
+      state.plan.name = saved.name || 'Untitled plan';
+      $('#plan-name').value = state.plan.name;
+      saved.areas.forEach(a => addArea(a.name, a.geometry, { quiet: true }));
+      restored = true;
+      toast(`Restored \u201c${state.plan.name}\u201d from your last session.`);
+    }
+  } catch (e) { /* ignore */ }
+
+  if (!restored) await loadBasePlan();
+
+  if (state.plan.areas.length) fitTo(state.plan.areas.map(a => a.layer));
+  else if (state.layers.city && state.layers.city.leaflet) fitTo([state.layers.city.leaflet]);
+
+  renderSlots();
+  scheduleUpdate();
+}
+
+initializeApp();
+window.__planner = { state, map, addArea, setSlot, analyze, readGeoFile, loadBaseLayers, loadBasePlan };
+})();
+</script>
+</body>
+</html>
