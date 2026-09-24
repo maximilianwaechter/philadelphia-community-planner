@@ -1,0 +1,1538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Philadelphia Community Area Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.20.2/dist/leaflet-geoman.css">
+<style>
+  :root {
+    --ink: #1C2433;
+    --ink-2: #505B6E;
+    --paper: #FFFFFF;
+    --panel: #F2F4F7;
+    --rule: #D6DCE4;
+    --rule-soft: #E8ECF1;
+    --plan: #6B2C91;       /* current plan: planning markup */
+    --harbor: #1F6F78;     /* saved plan being compared */
+    --cherry: #9D2235;     /* Temple University */
+    --police: #27407A;
+    --amber: #C98A1B;
+    --focus: #2B6CB0;
+    --font: 'Public Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--ink);
+    background: var(--panel);
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  .app { display: grid; grid-template-columns: minmax(340px, 410px) 1fr; height: 100%; }
+  #map { height: 100%; background: #E9ECEF; }
+  .leaflet-container { font-family: var(--font); }
+
+  .panel { background: var(--paper); border-right: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+  .brand { padding: 18px 20px 10px; }
+  .brand h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand p { margin: 2px 0 0; font-size: 13.5px; color: var(--ink-2); }
+
+  .tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--rule); }
+  .tab {
+    background: none; border: 0; border-bottom: 3px solid transparent; cursor: pointer;
+    padding: 10px 6px 8px; font-weight: 600; color: var(--ink-2); font-size: 13.5px;
+  }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .tab .count {
+    display: inline-block; min-width: 20px; margin-left: 4px; padding: 0 6px; border-radius: 10px;
+    background: var(--rule-soft); font-size: 12px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums;
+  }
+  .panels { flex: 1; overflow: auto; min-height: 0; }
+  .tabpanel { padding: 0 0 32px; }
+  .lead { margin: 0; padding: 14px 20px; font-size: 14px; color: var(--ink-2); max-width: 62ch; }
+
+  .btn {
+    border: 1px solid var(--ink); background: var(--ink); color: #fff; cursor: pointer;
+    border-radius: 6px; padding: 7px 12px; font-size: 14px; font-weight: 600; line-height: 1.2;
+  }
+  .btn:hover { background: #2C3850; }
+  .btn.plan { background: var(--plan); border-color: var(--plan); }
+  .btn.plan:hover { background: #5A2379; }
+  .btn.quiet { background: var(--paper); color: var(--ink); border-color: var(--rule); }
+  .btn.quiet:hover { border-color: var(--ink-2); }
+  .btn.small { padding: 4px 9px; font-size: 13px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  select.small { font-size: 13px; padding: 3px 6px; border: 1px solid var(--rule); border-radius: 5px; background: #fff; max-width: 100%; }
+  label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+
+  /* data layers */
+  .slot { display: grid; grid-template-columns: 16px 1fr; gap: 0 12px; padding: 14px 20px; border-top: 1px solid var(--rule); }
+  .key { width: 14px; height: 14px; margin-top: 4px; border: 2px solid var(--c); border-radius: 2px; background: color-mix(in srgb, var(--c) 20%, transparent); }
+  .key.point { border-radius: 50%; background: var(--c); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--c); }
+  .key.line { background: transparent; }
+  .slot h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .slot .help { margin: 1px 0 0; font-size: 13px; color: var(--ink-2); }
+  .slot .status { margin: 8px 0 0; font-size: 13.5px; }
+  .slot .status strong { font-weight: 600; }
+  .slot .controls { margin-top: 8px; }
+  .slot .controls + .controls { margin-top: 6px; }
+  .fieldnote { margin: 6px 0 0; font-size: 12.5px; color: var(--ink-2); }
+  .workspace { padding: 16px 20px; border-top: 1px solid var(--rule); background: var(--panel); }
+  .workspace h2 { margin: 0 0 2px; font-size: 15px; }
+  .workspace p { margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
+
+  /* plan */
+  .plan-head { padding: 16px 20px 6px; }
+  .plan-name {
+    width: 100%; border: 0; border-bottom: 2px solid transparent; background: transparent;
+    padding: 2px 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
+  }
+  .plan-name:hover, .plan-name:focus { border-bottom-color: var(--rule); outline: none; }
+  .plan-name:focus-visible { border-bottom-color: var(--focus); }
+  .plan-actions { padding: 6px 20px 14px; display: grid; gap: 8px; }
+  .area-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+  .area-row {
+    display: grid; grid-template-columns: 22px 16px 1fr; gap: 0 8px; align-items: center;
+    padding: 8px 20px 8px 16px; border-bottom: 1px solid var(--rule-soft); cursor: pointer;
+  }
+  .area-toggle { width: 16px; height: 16px; margin: 0; }
+  .area-swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0,0,0,.28); }
+  .area-row .bar { display:none; }
+  .area-row.selected { box-shadow: inset 3px 0 0 var(--area-color, var(--plan)); }
+  .area-row.selected { background: #F7F7FA; }
+  .area-name { width: 100%; border: 0; background: transparent; padding: 2px 0; font-weight: 600; border-bottom: 1px dashed transparent; }
+  .area-name:hover, .area-name:focus { border-bottom-color: var(--ink-2); outline: none; }
+  .area-meta { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .area-row .row { gap: 2px; }
+  .area-sub { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .area-sub .icon-btn { padding: 1px 6px; }
+  .icon-btn { border: 1px solid transparent; background: none; cursor: pointer; border-radius: 5px; padding: 3px 7px; font-size: 13px; color: var(--ink-2); }
+  .icon-btn:hover { border-color: var(--rule); color: var(--ink); }
+
+  .empty { margin: 0; padding: 18px 20px; color: var(--ink-2); font-size: 14px; max-width: 60ch; }
+  .empty strong { color: var(--ink); }
+
+  .details { padding: 6px 20px 0; }
+  .details-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 16px; }
+  .details-head h2 { margin: 0; font-size: 16px; }
+  .summary { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-2); }
+  .group h3 { margin: 18px 0 4px; font-size: 13.5px; font-weight: 700; }
+  .stats { display: grid; grid-template-columns: 1fr auto; margin: 0; }
+  .stats dt, .stats dd { margin: 0; padding: 5px 0; border-bottom: 1px solid var(--rule-soft); font-size: 14px; }
+  .stats dd { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; padding-left: 12px; }
+  .stats dd.list { font-weight: 500; text-align: right; max-width: 22ch; }
+  .note { margin: 16px 0 0; font-size: 12.5px; color: var(--ink-2); max-width: 64ch; }
+  .warn { margin: 10px 0 0; padding: 8px 10px; border-left: 3px solid var(--amber); background: #FBF4E6; font-size: 13px; }
+
+  /* compare */
+  .cmp-head { padding: 16px 20px 4px; display: grid; gap: 10px; }
+  .legend-pair { display: grid; gap: 6px; }
+  .legend-pair div { display: flex; gap: 8px; align-items: center; font-size: 14px; font-weight: 600; }
+  .swatch { width: 18px; height: 12px; border-radius: 2px; flex: none; }
+  .swatch.cur { background: color-mix(in srgb, var(--plan) 22%, transparent); border: 2px solid var(--plan); }
+  .swatch.cmp { background: color-mix(in srgb, var(--harbor) 12%, transparent); border: 2px dashed var(--harbor); }
+  .table-wrap { overflow-x: auto; padding: 0 20px; }
+  table.cmp { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 12px; }
+  table.cmp th, table.cmp td { padding: 5px 4px; text-align: right; border-bottom: 1px solid var(--rule-soft); font-variant-numeric: tabular-nums; }
+  table.cmp th:first-child, table.cmp td:first-child { text-align: left; padding-left: 0; }
+  table.cmp thead th { font-size: 12.5px; font-weight: 600; color: var(--ink-2); border-bottom: 1.5px solid var(--ink); vertical-align: bottom; }
+  table.cmp thead th .swatch { display: block; margin: 0 0 4px auto; }
+  table.cmp tr.grp td { text-align: left; font-weight: 700; padding-top: 14px; border-bottom: 0; }
+  table.cmp td:not(:first-child) { white-space: nowrap; }
+  table.cmp td.diff { color: var(--ink-2); }
+  table.cmp td.diff.up, table.cmp td.diff.down { color: var(--ink); font-weight: 600; }
+
+
+  .section-title { margin: 18px 20px 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); }
+  .source-card { margin: 12px 20px 0; padding: 12px; border: 1px solid var(--rule); border-radius: 7px; background: var(--panel); }
+  .source-card h3 { margin: 0 0 4px; font-size: 14px; }
+  .source-card p { margin: 4px 0; font-size: 12.5px; color: var(--ink-2); }
+  .source-card a { color: var(--focus); text-decoration: none; }
+  .source-card a:hover { text-decoration: underline; }
+  .demo-status { margin: 12px 20px; padding: 10px 12px; border-left: 3px solid var(--focus); background: #F4F8FC; font-size: 13px; }
+  .demo-status.error { border-left-color: #8A1C1C; background: #FFF4F4; }
+  .demo-picker { padding: 14px 20px 0; }
+  .demo-picker label { display:block; font-size:12.5px; font-weight:600; color:var(--ink-2); margin-bottom:4px; }
+  .demo-picker select { width:100%; padding:7px 8px; border:1px solid var(--rule); border-radius:5px; background:#fff; }
+  .compare-section { border-top:1px solid var(--rule); padding-top:10px; margin-top:10px; }
+  .compare-controls { padding: 8px 20px; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .compare-controls label { font-size:12px; color:var(--ink-2); }
+  .compare-controls select { width:100%; padding:5px; border:1px solid var(--rule); border-radius:5px; background:#fff; margin-top:3px; }
+
+  /* map extras */
+  .leaflet-tooltip.area-tag {
+    background: var(--plan); color: #fff; border: 0; border-radius: 3px; padding: 2px 7px;
+    font: 600 12px/1.3 var(--font); box-shadow: 0 1px 2px rgba(28, 36, 51, .35);
+  }
+  .leaflet-tooltip.area-tag::before, .leaflet-tooltip.compare-tag::before { display: none; }
+  .leaflet-tooltip.compare-tag {
+    background: #fff; color: var(--harbor); border: 1.5px solid var(--harbor); border-radius: 3px;
+    padding: 1px 6px; font: 600 12px/1.3 var(--font); box-shadow: none;
+  }
+  .leaflet-tooltip.ref-tip { font: 500 12.5px/1.35 var(--font); }
+  .map-legend { background: #fff; padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; box-shadow: 0 1px 4px rgba(28, 36, 51, .25); max-width: 220px; }
+  .map-legend strong { display: block; font-size: 12.5px; margin-bottom: 2px; }
+  .map-legend i { display: inline-block; width: 14px; height: 10px; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.15); }
+
+  #toasts { position: fixed; right: 60px; top: 12px; z-index: 2000; display: grid; gap: 8px; justify-items: end; pointer-events: none; }
+  .toast { pointer-events: auto; background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 6px; max-width: 380px; font-size: 14px; box-shadow: 0 4px 14px rgba(28, 36, 51, .25); }
+  .toast.error { background: #8A1C1C; }
+
+  @media (max-width: 820px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 46vh 1fr; }
+    #map { grid-row: 1; }
+    .panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--rule); }
+    .brand { display: none; }
+    .map-legend { font-size: 11px; line-height: 1.35; padding: 6px 8px; }
+    #toasts { right: 12px; left: 12px; justify-items: stretch; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel" aria-label="Planner controls">
+    <header class="brand">
+      <h1>Philadelphia Community Area Planner</h1>
+      <p>Explore reference layers, edit planning areas, and compare modeled demographics.</p>
+    </header>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tab-data" aria-controls="panel-data" aria-selected="true">Layers</button>
+      <button class="tab" role="tab" id="tab-demographics" aria-controls="panel-demographics" aria-selected="false">Demographics</button>
+      <button class="tab" role="tab" id="tab-plan" aria-controls="panel-plan" aria-selected="false">Plan<span class="count" id="plan-count">0</span></button>
+      <button class="tab" role="tab" id="tab-compare" aria-controls="panel-compare" aria-selected="false">Compare</button>
+    </nav>
+    <div class="panels">
+      <section class="tabpanel" id="panel-data" role="tabpanel" aria-labelledby="tab-data">
+        <p class="lead">Base map layers load automatically. Use the switches below to show or hide reference layers. The ten planning polygons have their own color-coded legend in the Plan tab.</p>
+        <div id="slots"></div>
+        <h2 class="section-title">Demographic data sources</h2>
+        <div id="demo-source-status" class="demo-status">Loading demographic sources…</div>
+        <div class="source-card">
+          <h3>Source and QA downloads</h3>
+          <p><a href="data/philly_tracts_acs2024.csv" download>philly_tracts_acs2024.csv</a> — ACS tract controls used by the model.</p>
+          <p><a href="data/tract_model_qa.csv" download>tract_model_qa.csv</a> — tract allocation QA.</p>
+          <p><a href="data/opa_to_building_crosswalk.csv" download>opa_to_building_crosswalk.csv</a> — OPA-to-building assignments.</p>
+          <p><a href="data/unmatched_opa_points.csv" download>unmatched_opa_points.csv</a> — unresolved OPA records.</p>
+          <p><a href="https://github.com/maximilianwaechter/philadelphia-community-planner/releases" target="_blank" rel="noopener">Large building model downloads (GitHub Releases)</a> — building_summary.csv, master GeoPackage, and related model outputs.</p>
+        </div>
+      </section>
+
+      <section class="tabpanel" id="panel-demographics" role="tabpanel" aria-labelledby="tab-demographics" hidden>
+        <div class="demo-picker">
+          <label for="demo-scope">Demographics for</label>
+          <select id="demo-scope"></select>
+        </div>
+        <div class="details" id="demographics"></div>
+      </section>
+
+      <section class="tabpanel" id="panel-plan" role="tabpanel" aria-labelledby="tab-plan" hidden>
+        <div class="plan-head">
+          <label class="sr-only" for="plan-name">Plan name</label>
+          <input class="plan-name" id="plan-name" value="Untitled plan" autocomplete="off">
+        </div>
+        <div class="plan-actions">
+          <div class="row">
+            <button class="btn plan" id="btn-draw">Draw an area</button>
+            <button class="btn quiet" id="btn-import">Import areas</button>
+          </div>
+          <div class="row">
+            <button class="btn quiet small" id="btn-save-plan">Save plan</button>
+            <button class="btn quiet small" id="btn-open-plan">Open plan</button>
+            <button class="btn quiet small" id="btn-new-plan">Reset base polygons</button>
+          </div>
+          <label class="inline"><input type="checkbox" id="toggle-all-areas" checked> Show all planning polygons</label>
+        </div>
+        <h2 class="section-title">Planning polygon legend</h2>
+        <ul class="area-list" id="area-list"></ul>
+        <div id="plan-empty" class="empty">
+          <strong>No areas yet.</strong> Draw one on the map, or import polygons of interest.
+        </div>
+      </section>
+
+      <section class="tabpanel" id="panel-compare" role="tabpanel" aria-labelledby="tab-compare" hidden>
+        <div id="compare"></div>
+      </section>
+    </div>
+  </aside>
+  <main id="map" aria-label="Map"></main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<input type="file" id="file-generic" hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.20.2/dist/leaflet-geoman.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.2.0/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/shpjs@6.2.0/dist/shp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@7.1.2/dist/togeojson.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ * Configuration
+ * ------------------------------------------------------------------ */
+const ACCEPT = '.geojson,.json,.zip,.kml,.kmz,.csv';
+const STORE_KEY = 'phillyCommunityPlanner.plan.v3';
+const SQM_PER_SQMI = 2589988.11;
+const BASE_PLAN_URL = 'data/Polygons_of_interest.geojson';
+const TRACT_CSV_URL = 'data/philly_tracts_acs2024.csv';
+const BUILDING_WEIGHTS_URL = 'data/building_weights_web.csv';
+const AREA_COLORS = ['#7B2CBF','#0072B2','#D55E00','#009E73','#E69F00','#CC79A7','#56B4E9','#8C564B','#4C78A8','#E45756','#59A14F','#B279A2'];
+
+const C = {
+  plan: '#6B2C91', harbor: '#1F6F78', cherry: '#9D2235', police: '#27407A',
+  amber: '#C98A1B', tract: '#6B7686', building: '#8A919C', city: '#4E5968',
+  council: '#6F7A8A', residents: '#2F6F5E',
+};
+
+// Static project layers. GitHub Pages serves these from ./data/.
+// "optional" means the rest of the application still opens if the file is absent.
+const SLOTS = [
+  { key: 'city', title: 'Philadelphia City Limits', kind: 'area', color: C.city,
+    url: 'data/City_Limits.geojson', visible: true, analyzeOnClick: true,
+    help: 'Official city boundary and default map extent.' },
+  { key: 'council', title: 'Council Districts 2024', kind: 'area', color: C.council,
+    url: 'data/Council_districts_2024.geojson', visible: true, analyzeOnClick: true,
+    help: 'Click a district to calculate demographics for that district.' },
+  { key: 'police', title: 'TU Police Boundary', kind: 'area', color: C.police,
+    url: 'data/TU_police_boundary.geojson', visible: true, analyzeOnClick: true,
+    help: 'Temple University police patrol boundary.' },
+  { key: 'tuBuildings', title: 'TU Buildings', kind: 'area', color: C.cherry,
+    url: 'data/TU_buildings.geojson', visible: true,
+    help: 'Temple University building footprints.' },
+  { key: 'tuStations', title: 'TU Police Stations', kind: 'point', color: C.cherry,
+    url: 'data/TU_Police_Stations.geojson', visible: true,
+    help: 'Temple police/security locations.' },
+  { key: 'policeStations', title: 'Philadelphia Police Stations', kind: 'point', color: C.police,
+    url: 'data/Police_Stations.geojson', visible: true,
+    help: 'Philadelphia police station locations.' },
+  { key: 'schools', title: 'Schools of Interest', kind: 'point', color: C.amber,
+    url: 'data/Schools_of_Interest.geojson', visible: true,
+    help: 'Schools used as planning reference points.' },
+];
+
+// Building-level modeled fields created by the preprocessing script.
+// The UI continues to use the original ACS field names internally, but reads
+// estimated building fields whenever possible.
+// Field names match the ACS tract pull. During preprocessing, additive counts are
+// distributed to residential building points. The browser sums those building values;
+// medians remain household-weighted approximations.
+const COUNT_FIELDS = [
+  'pop_total', 'hh_pop', 'hh_occ', 'owner_occ', 'renter_occ', 'pov_univ', 'pov_below',
+  'race_total', 'white_nh', 'black_nh', 'asian_nh', 'hispanic',
+  'workers', 'drv_alone', 'pub_trans', 'bicycle', 'walked', 'wfh',
+  'veh_hh', 'no_vehicle', 'sch_univ', 'k12_enr', 'pop25plus', 'hs_grad',
+  'bachelors', 'masters', 'prof_deg', 'doctorate', 'labor_frc', 'employed', 'unemployed',
+  'hins_univ', 'dis_univ', 'lang_univ', 'inet_univ', 'under18', 'age65plus',
+  'm_under5', 'm_5_9', 'm_10_14', 'm_15_17', 'f_under5', 'f_5_9', 'f_10_14', 'f_15_17',
+  'm_65_66', 'm_67_69', 'm_70_74', 'm_75_79', 'm_80_84', 'm_85plus',
+  'f_65_66', 'f_67_69', 'f_70_74', 'f_75_79', 'f_80_84', 'f_85plus',
+];
+const MEDIAN_FIELDS = { med_hh_inc: 'hh_occ', med_rent: 'renter_occ', med_value: 'owner_occ' };
+
+const METRICS = [
+  { id: 'pop', prop: 'pop', group: 'People', label: 'Modeled household population', type: 'count', num: ['hh_pop'] },
+  { id: 'under18', prop: 'pct_u18', group: 'People', label: 'Under 18', type: 'pct', num: ['under18'], den: ['pop_total'] },
+  { id: 'age65', prop: 'pct_65up', group: 'People', label: '65 and over', type: 'pct', num: ['age65plus'], den: ['pop_total'] },
+  { id: 'k12', prop: 'k12_enr', group: 'People', label: 'K\u201312 students', type: 'count', num: ['k12_enr'] },
+  { id: 'black', prop: 'pct_blk_nh', group: 'Race and ethnicity', label: 'Black, non-Hispanic', type: 'pct', num: ['black_nh'], den: ['race_total'] },
+  { id: 'white', prop: 'pct_wht_nh', group: 'Race and ethnicity', label: 'White, non-Hispanic', type: 'pct', num: ['white_nh'], den: ['race_total'] },
+  { id: 'hisp', prop: 'pct_hisp', group: 'Race and ethnicity', label: 'Hispanic or Latino', type: 'pct', num: ['hispanic'], den: ['race_total'] },
+  { id: 'asian', prop: 'pct_asn_nh', group: 'Race and ethnicity', label: 'Asian, non-Hispanic', type: 'pct', num: ['asian_nh'], den: ['race_total'] },
+  { id: 'income', prop: 'med_income', group: 'Income and housing', label: 'Median household income', type: 'money', num: ['med_hh_inc'] },
+  { id: 'poverty', prop: 'pct_pov', group: 'Income and housing', label: 'Below poverty level', type: 'pct', num: ['pov_below'], den: ['pov_univ'] },
+  { id: 'hh', prop: 'households', group: 'Income and housing', label: 'Households', type: 'count', num: ['hh_occ'] },
+  { id: 'renter', prop: 'pct_renter', group: 'Income and housing', label: 'Renter households', type: 'pct', num: ['renter_occ'], den: ['hh_occ'] },
+  { id: 'rent', prop: 'med_rent', group: 'Income and housing', label: 'Median gross rent', type: 'money', num: ['med_rent'] },
+  { id: 'value', prop: 'med_value', group: 'Income and housing', label: 'Median home value', type: 'money', num: ['med_value'] },
+  { id: 'nocar', prop: 'pct_no_car', group: 'Getting around', label: 'Households without a car', type: 'pct', num: ['no_vehicle'], den: ['veh_hh'] },
+  { id: 'transit', prop: 'pct_transit', group: 'Getting around', label: 'Commute by transit', type: 'pct', num: ['pub_trans'], den: ['workers'] },
+  { id: 'walk', prop: 'pct_walk', group: 'Getting around', label: 'Commute on foot', type: 'pct', num: ['walked'], den: ['workers'] },
+  { id: 'bike', prop: 'pct_bike', group: 'Getting around', label: 'Commute by bike', type: 'pct', num: ['bicycle'], den: ['workers'] },
+  { id: 'drive', prop: 'pct_drive', group: 'Getting around', label: 'Drive alone to work', type: 'pct', num: ['drv_alone'], den: ['workers'] },
+  { id: 'wfh', prop: 'pct_wfh', group: 'Getting around', label: 'Work from home', type: 'pct', num: ['wfh'], den: ['workers'] },
+  { id: 'ba', prop: 'pct_ba_up', group: 'Education and work', label: 'Bachelor\u2019s degree or higher', type: 'pct', num: ['bachelors', 'masters', 'prof_deg', 'doctorate'], den: ['pop25plus'] },
+  { id: 'hs', prop: 'pct_hs_only', group: 'Education and work', label: 'High school diploma as highest level', type: 'pct', num: ['hs_grad'], den: ['pop25plus'] },
+  { id: 'unemp', prop: 'pct_unemp', group: 'Education and work', label: 'Unemployment rate', type: 'pct', num: ['unemployed'], den: ['employed', 'unemployed'] },
+];
+const IGNORE_FIELD = /^(objectid|fid|ogc_fid|gid|id|shape_?(length|leng|area)|st_area.*|st_length.*|aland|awater|intptlat|intptlon|statefp|countyfp|tractce|geoid|mtfcc|funcstat|lat|lon|lng|latitude|longitude|x|y)$/i;
+
+proj4.defs('EPSG:2272', '+proj=lcc +lat_1=40.96666666666667 +lat_2=39.93333333333333 +lat_0=39.33333333333334 +lon_0=-77.75 +x_0=600000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=us-ft +no_defs');
+proj4.defs('EPSG:32129', '+proj=lcc +lat_1=40.96666666666667 +lat_2=39.93333333333333 +lat_0=39.33333333333334 +lon_0=-77.75 +x_0=600000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs');
+const CRS_NAMES = { 2272: 'PA State Plane South (feet)', 32129: 'PA State Plane South (meters)', 3857: 'Web Mercator' };
+
+/* ------------------------------------------------------------------ *
+ * Small helpers
+ * ------------------------------------------------------------------ */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const toNum = v => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v.replace(/,/g, '')))) return Number(v.replace(/,/g, ''));
+  return NaN;
+};
+const bboxHit = (a, b) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+const inBbox = (p, b) => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
+const isPoly = g => g && (g.type === 'Polygon' || g.type === 'MultiPolygon');
+const feature = geometry => ({ type: 'Feature', properties: {}, geometry });
+const slug = s => (s || 'plan').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'plan';
+const today = () => new Date().toISOString().slice(0, 10);
+
+function toast(msg, kind = 'info', ms = 5200) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind === 'error' ? ' error' : '');
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), kind === 'error' ? ms + 3000 : ms);
+}
+
+function download(name, text, type = 'application/geo+json') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function pickFile(accept = ACCEPT) {
+  return new Promise(resolve => {
+    const input = $('#file-generic');
+    input.accept = accept; input.value = '';
+    input.onchange = () => resolve(input.files[0] || null);
+    input.click();
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Reading files into WGS84 GeoJSON
+ * ------------------------------------------------------------------ */
+function mapCoords(geom, fn) {
+  const walk = c => (typeof c[0] === 'number' ? fn(c) : c.map(walk));
+  return { type: geom.type, coordinates: walk(geom.coordinates) };
+}
+function firstCoord(geom) {
+  let c = geom.coordinates;
+  while (Array.isArray(c) && typeof c[0] !== 'number') c = c[0];
+  return Array.isArray(c) ? c : null;
+}
+
+function sourceCRS(fc) {
+  const named = fc.crs && fc.crs.properties && fc.crs.properties.name;
+  if (named && !/CRS84/i.test(named)) {
+    const m = String(named).match(/(\d{4,6})\D*$/);
+    const code = m && Number(m[1]);
+    if ([4326, 4269, 4258, 4152].includes(code)) return null;
+    if (CRS_NAMES[code]) return code;
+    if (code) throw new Error(`This file uses EPSG:${code}, which the planner can't convert. Export it as WGS84 (EPSG:4326) and try again.`);
+  }
+  const sample = fc.features.slice(0, 25).map(f => firstCoord(f.geometry)).find(Boolean);
+  if (!sample) return null;
+  const [x, y] = sample;
+  if (Math.abs(x) <= 180 && Math.abs(y) <= 90) return null;
+  if (x < -1e6 && y > 1e6) return 3857;
+  if (x > 1.5e6 && x < 4e6) return 2272;
+  if (x > 2e5 && x <= 1.5e6) return 32129;
+  throw new Error('The coordinates in this file are in a projection the planner doesn\u2019t recognize. Export it as WGS84 (EPSG:4326) and try again.');
+}
+
+function normalizeFC(fc) {
+  const out = [];
+  for (const f of fc.features || []) {
+    if (!f || !f.geometry) continue;
+    const props = f.properties || {};
+    const geoms = f.geometry.type === 'GeometryCollection' ? f.geometry.geometries : [f.geometry];
+    for (const g of geoms) {
+      if (!g || !g.coordinates || !['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'].includes(g.type)) continue;
+      out.push({ type: 'Feature', properties: props, geometry: mapCoords(g, c => [Number(c[0]), Number(c[1])]) });
+    }
+  }
+  const result = { type: 'FeatureCollection', features: out };
+  const code = sourceCRS({ crs: fc.crs, features: out });
+  if (code) {
+    const from = code === 3857 ? 'EPSG:3857' : `EPSG:${code}`;
+    for (const f of out) f.geometry = mapCoords(f.geometry, c => proj4(from, 'EPSG:4326', c));
+    result.reprojectedFrom = code;
+  }
+  result.features = result.features.filter(f => {
+    const c = firstCoord(f.geometry);
+    return c && Number.isFinite(c[0]) && Number.isFinite(c[1]);
+  });
+  return result;
+}
+
+function parseWKT(text) {
+  if (typeof text !== 'string') return null;
+  const s = text.trim().replace(/^SRID=\d+;/i, '');
+  const m = s.match(/^(MULTIPOLYGON|POLYGON|MULTILINESTRING|LINESTRING|MULTIPOINT|POINT)\s*(?:ZM|Z|M)?\s*(\(.*\))\s*$/is);
+  if (!m) return null;
+  const num = '-?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?';
+  const body = m[2]
+    .replace(new RegExp(`${num}(?:\\s+${num})+`, 'g'), t => '[' + t.trim().split(/\s+/).join(',') + ']')
+    .replace(/\(/g, '[').replace(/\)/g, ']');
+  let coords;
+  try { coords = JSON.parse(body); } catch { return null; }
+  const type = { POINT: 'Point', MULTIPOINT: 'MultiPoint', LINESTRING: 'LineString', MULTILINESTRING: 'MultiLineString', POLYGON: 'Polygon', MULTIPOLYGON: 'MultiPolygon' }[m[1].toUpperCase()];
+  if (type === 'Point') coords = coords[0];
+  if (type === 'MultiPoint') coords = coords.map(c => (Array.isArray(c[0]) ? c[0] : c));
+  return { type, coordinates: coords };
+}
+
+function csvToFC(text) {
+  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+  const fields = parsed.meta.fields || [];
+  const rows = parsed.data;
+  if (!rows.length) throw new Error('This CSV has no rows.');
+  const wktCol = fields.find(f => /^(wkt|geometry|the_geom|shape|geom)$/i.test(f) && parseWKT(rows[0][f]))
+    || fields.find(f => parseWKT(rows[0][f]));
+  const features = [];
+  if (wktCol) {
+    for (const r of rows) {
+      const g = parseWKT(r[wktCol]);
+      if (!g) continue;
+      const props = { ...r }; delete props[wktCol];
+      features.push({ type: 'Feature', properties: props, geometry: g });
+    }
+  } else {
+    const lat = fields.find(f => /^(lat|latitude|y|point_y|ycoord|y_coord)$/i.test(f));
+    const lon = fields.find(f => /^(lon|lng|long|longitude|x|point_x|xcoord|x_coord)$/i.test(f));
+    if (!lat || !lon) throw new Error('This CSV needs latitude and longitude columns (or X and Y), or a WKT geometry column.');
+    for (const r of rows) {
+      const x = toNum(r[lon]), y = toNum(r[lat]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const props = { ...r }; delete props[lat]; delete props[lon];
+      features.push({ type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [x, y] } });
+    }
+  }
+  if (!features.length) throw new Error('No rows in this CSV had usable coordinates or geometry.');
+  return { type: 'FeatureCollection', features };
+}
+
+function kmlToFC(text) {
+  const dom = new DOMParser().parseFromString(text, 'text/xml');
+  if (dom.getElementsByTagName('parsererror').length) throw new Error('This KML file couldn\u2019t be read.');
+  return toGeoJSON.kml(dom);
+}
+
+function toFC(obj) {
+  if (Array.isArray(obj)) return { type: 'FeatureCollection', features: obj.filter(f => f && f.type === 'Feature') };
+  if (obj.type === 'FeatureCollection') return obj;
+  if (obj.type === 'Feature') return { type: 'FeatureCollection', features: [obj] };
+  if (obj.type && obj.coordinates) return { type: 'FeatureCollection', features: [feature(obj)] };
+  if (obj.type === 'GeometryCollection') return { type: 'FeatureCollection', features: [feature(obj)] };
+  throw new Error('This JSON file isn\u2019t GeoJSON. In ArcGIS Pro, use Features To JSON with "Output to GeoJSON" and "Project to WGS_1984" checked.');
+}
+
+async function readGeoFile(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  let raw = null, fc;
+  if (ext === 'zip') {
+    const out = await shp(await file.arrayBuffer());
+    const list = Array.isArray(out) ? out : [out];
+    fc = { type: 'FeatureCollection', features: list.flatMap(x => x.features || []) };
+  } else if (ext === 'kmz') {
+    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const kml = Object.values(zip.files).find(f => /\.kml$/i.test(f.name));
+    if (!kml) throw new Error('There\u2019s no .kml file inside this KMZ.');
+    fc = kmlToFC(await kml.async('string'));
+  } else if (ext === 'kml') {
+    fc = kmlToFC(await file.text());
+  } else if (ext === 'csv' || ext === 'txt') {
+    fc = csvToFC(await file.text());
+  } else if (ext === 'geojson' || ext === 'json') {
+    try { raw = JSON.parse(await file.text()); } catch { throw new Error(`${file.name} isn\u2019t valid JSON.`); }
+    if (raw && raw.app === 'area-planner-workspace') return { workspace: raw };
+    fc = toFC(raw);
+  } else {
+    throw new Error(`The planner can\u2019t read .${ext} files. Use GeoJSON, a zipped shapefile, KML or KMZ, or CSV.`);
+  }
+  const norm = normalizeFC(fc);
+  if (!norm.features.length) throw new Error(`${file.name} has no features the planner can map.`);
+  return { fc: norm, meta: raw && raw.planner ? raw.planner : null };
+}
+
+/* ------------------------------------------------------------------ *
+ * Map
+ * ------------------------------------------------------------------ */
+const map = L.map('map', { zoomControl: true }).setView([39.9812, -75.1553], 13);
+const basemaps = {
+  'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }),
+  'Esri topographic': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: 'Tiles &copy; Esri',
+  }),
+  'Aerial': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics',
+  }),
+};
+basemaps['OpenStreetMap'].addTo(map);
+L.control.layers(basemaps, null, { position: 'topright' }).addTo(map);
+L.control.scale({ imperial: true, metric: false }).addTo(map);
+
+[['tractsPane', 350], ['buildingsPane', 360], ['templePane', 370], ['policePane', 380], ['comparePane', 390], ['pointsPane', 450]]
+  .forEach(([name, z]) => { map.createPane(name).style.zIndex = z; });
+const buildingRenderer = L.canvas({ pane: 'buildingsPane', padding: 0.3 });
+
+map.pm.addControls({
+  position: 'topleft', drawMarker: false, drawCircleMarker: false, drawPolyline: false,
+  drawCircle: false, drawText: false, rotateMode: false,
+});
+map.pm.setGlobalOptions({ pathOptions: { color: C.plan, weight: 2.5, fillColor: C.plan, fillOpacity: 0.14 } });
+
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = () => { const d = L.DomUtil.create('div', 'map-legend'); d.hidden = true; return d; };
+legend.addTo(map);
+
+/* ------------------------------------------------------------------ *
+ * State
+ * ------------------------------------------------------------------ */
+const state = {
+  layers: {},          // key -> { fc, fileName, labelField, visible, leaflet, index }
+  plan: { name: 'Untitled plan', areas: [] },
+  compare: null,       // { name, areas: [{ name, geometry }], layer, visible, saved }
+  selected: null,      // area id or null (whole plan)
+  choro: '',
+  dataRev: 0,
+  tractFields: { counts: [], medians: [], other: [] }, // retained name for metric compatibility; now describes building-model fields
+};
+let nextId = 1;
+const statsCache = new Map();
+
+/* ------------------------------------------------------------------ *
+ * Reference + analysis layers
+ * ------------------------------------------------------------------ */
+function guessLabelField(fc, key) {
+  const props = fc.features[0] ? Object.keys(fc.features[0].properties || {}) : [];
+  const prefs = {
+    city: [/^name$/i, /city/i],
+    council: [/district/i, /^name$/i, /dist/i],
+    police: [/^name$/i, /boundary/i, /district/i],
+    tuBuildings: [/^name$/i, /^bldg/i, /^building/i, /^address/i],
+    tuStations: [/^location$/i, /^name$/i, /station/i],
+    policeStations: [/^location$/i, /^name$/i, /district/i, /station/i],
+    schools: [/school_?name/i, /^name$/i, /^facil/i, /school/i],
+    residents: [/^fp_address$/i, /^address$/i, /^building_id$/i],
+  }[key] || [/^name$/i];
+  for (const re of prefs) { const hit = props.find(p => re.test(p)); if (hit) return hit; }
+  return props.find(p => fc.features.some(f => typeof (f.properties || {})[p] === 'string')) || '';
+}
+const labelOf = (f, field) => {
+  const v = field ? (f.properties || {})[field] : '';
+  return v === undefined || v === null || v === '' ? '' : String(v);
+};
+
+function slotStyle(slot) {
+  switch (slot.key) {
+    case 'city': return { pane: 'tractsPane', color: C.city, weight: 2, opacity: 0.9, fillOpacity: 0 };
+    case 'council': return { pane: 'tractsPane', color: C.council, weight: 1.4, opacity: 0.9, fillColor: C.council, fillOpacity: 0.035 };
+    case 'police': return { pane: 'policePane', color: C.police, weight: 2.2, opacity: 0.95, dashArray: '7 5', fillColor: C.police, fillOpacity: 0.035 };
+    case 'tuBuildings': return { pane: 'buildingsPane', renderer: buildingRenderer, color: '#7D2638', weight: 0.7, fillColor: C.cherry, fillOpacity: 0.24 };
+    case 'residents': return { pane: 'pointsPane', color: C.residents, weight: 1, fillOpacity: 0.6 };
+    default: return { pane: 'pointsPane', color: slot.color, weight: 1.5, fillOpacity: 0.3 };
+  }
+}
+
+function referencePopup(slot, f) {
+  const entry = state.layers[slot.key];
+  const name = labelOf(f, entry && entry.labelField) || slot.title.replace(/s$/, '');
+  if (!slot.analyzeOnClick || !isPoly(f.geometry)) return `<strong>${esc(name)}</strong>`;
+  const r = analyze(f.geometry);
+  if (!r.demo || !r.demo.buildingsUsed) {
+    return `<strong>${esc(name)}</strong><br><span style="color:#505B6E">Demographic model is not loaded, or no modeled residences fall inside this feature.</span>`;
+  }
+  const wanted = ['pop', 'hh', 'under18', 'age65', 'poverty', 'renter', 'income'];
+  const metrics = availableMetrics().filter(m => wanted.includes(m.id));
+  return `<strong>${esc(name)}</strong><div style="margin-top:6px">${metrics.map(m =>
+    `<div style="display:flex;gap:12px;justify-content:space-between"><span>${esc(m.label)}</span><b>${esc(fmt(m, metricValue(m, r.demo.vals)))}</b></div>`
+  ).join('')}</div><div style="margin-top:6px;color:#505B6E;font-size:12px">Modeled from ${r.demo.buildingsUsed.toLocaleString()} residential building point${r.demo.buildingsUsed === 1 ? '' : 's'}.</div>`;
+}
+
+function buildLeaflet(slot, entry) {
+  const style = slotStyle(slot);
+  const layer = L.geoJSON(entry.fc, {
+    pmIgnore: true, snapIgnore: slot.key === 'tuBuildings' || slot.key === 'residents',
+    pane: style.pane, renderer: style.renderer,
+    style: f => (f.geometry.type === 'Point' || f.geometry.type === 'MultiPoint'
+      ? { pane: 'pointsPane', color: '#fff', weight: 1.2, opacity: 1, fillColor: slot.color, fillOpacity: slot.key === 'residents' ? 0.45 : 1 }
+      : style),
+    pointToLayer: (f, ll) => L.circleMarker(ll, {
+      pane: 'pointsPane', pmIgnore: true,
+      radius: slot.key === 'residents' ? 2.2 : (slot.key.includes('Stations') ? 6.5 : 5),
+      color: '#fff', weight: slot.key === 'residents' ? 0.4 : 1.5,
+      fillColor: slot.color, fillOpacity: slot.key === 'residents' ? 0.45 : 1,
+    }),
+    onEachFeature: (f, l) => {
+      if (slot.key !== 'residents') l.bindTooltip(() => tipFor(slot, f), { sticky: true, className: 'ref-tip' });
+      if (slot.analyzeOnClick && isPoly(f.geometry)) {
+        l.on('click', () => {
+          const name = labelOf(f, entry.labelField) || slot.title.replace(/s$/, '');
+          state.analysisSelection = { type: 'reference', name, geometry: f.geometry };
+          renderDemographics();
+          showTab('demographics');
+        });
+      }
+    },
+  });
+  return layer;
+}
+
+function tipFor(slot, f) {
+  const entry = state.layers[slot.key];
+  return esc(labelOf(f, entry && entry.labelField) || slot.title.replace(/s$/, ''));
+}
+
+function prepIndex(key, fc, labelField) {
+  const slot = SLOTS.find(s => s.key === key);
+  if (slot && slot.kind === 'point') {
+    return fc.features.map(f => {
+      let pt;
+      try { pt = f.geometry.type === 'Point' ? f.geometry.coordinates : turf.pointOnFeature(f).geometry.coordinates; } catch { pt = null; }
+      return pt ? { pt, label: labelOf(f, labelField), f } : null;
+    }).filter(Boolean);
+  }
+  return fc.features.map(f => {
+    let g = f.geometry;
+    if (g && (g.type === 'LineString' || g.type === 'MultiLineString')) g = linesToPolygon(g);
+    if (!g || !isPoly(g)) return null;
+    const ff = { type: 'Feature', properties: f.properties, geometry: g };
+    return { f: ff, bbox: turf.bbox(ff), label: labelOf(f, labelField) };
+  }).filter(Boolean);
+}
+
+function setSlot(key, fc, fileName, opts = {}) {
+  const slot = SLOTS.find(s => s.key === key);
+  if (!slot) return;
+  const old = state.layers[key];
+  if (old && old.leaflet) map.removeLayer(old.leaflet);
+  const entry = {
+    fc, fileName,
+    labelField: opts.labelField && fc.features.some(f => f.properties && opts.labelField in f.properties) ? opts.labelField : guessLabelField(fc, key),
+    visible: opts.visible !== undefined ? opts.visible : slot.visible !== false,
+  };
+  state.layers[key] = entry;
+  entry.index = prepIndex(key, fc, entry.labelField);
+  entry.leaflet = buildLeaflet(slot, entry);
+  if (entry.visible) entry.leaflet.addTo(map);
+  state.dataRev++; statsCache.clear();
+  renderSlots(); scheduleUpdate();
+}
+
+async function fetchGeoJSON(url) {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  const raw = await response.json();
+  return normalizeFC(raw);
+}
+
+async function loadBaseLayers() {
+  const results = await Promise.all(SLOTS.map(async slot => {
+    try {
+      const fc = await fetchGeoJSON(slot.url);
+      setSlot(slot.key, fc, slot.url.replace(/^data\//, ''), { visible: slot.visible !== false });
+      return { slot, ok: true };
+    } catch (err) {
+      console.warn(`Could not load ${slot.url}`, err);
+      if (!slot.optional) toast(`Could not load ${slot.url}. Check that the file is in the GitHub data folder.`, 'error', 7000);
+      return { slot, ok: false };
+    }
+  }));
+  const city = state.layers.city && state.layers.city.leaflet;
+  if (city && city.getBounds && city.getBounds().isValid() && !state.plan.areas.length) {
+    map.fitBounds(city.getBounds(), { padding: [18, 18], maxZoom: 12 });
+  }
+  return results;
+}
+
+const cleanGeoid = v => String(v ?? '').replace(/\.0$/, '').padStart(11, '0');
+const gridSize = 0.02;
+const gridKey = (lon, lat) => `${Math.floor(lon / gridSize)},${Math.floor(lat / gridSize)}`;
+
+async function fetchCsvRows(url) {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
+  const text = await response.text();
+  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: false });
+  if (parsed.errors && parsed.errors.length) console.warn(`CSV parse warnings for ${url}`, parsed.errors.slice(0, 5));
+  return parsed.data;
+}
+
+async function loadDemographicSources() {
+  const status = $('#demo-source-status');
+  try {
+    status.className = 'demo-status';
+    status.textContent = 'Loading ACS tract controls and building allocation weights…';
+    const [tractRows, buildingRows] = await Promise.all([fetchCsvRows(TRACT_CSV_URL), fetchCsvRows(BUILDING_WEIGHTS_URL)]);
+
+    const tractMap = new Map();
+    for (const row of tractRows) {
+      const geoid = cleanGeoid(row.TRACT_GEOID ?? row.tract_geoid ?? row.GEOID ?? row.geoid);
+      if (!geoid || geoid === '00000000000') continue;
+      const vals = {};
+      for (const [k, raw] of Object.entries(row)) {
+        const v = toNum(raw);
+        if (Number.isFinite(v) && v >= 0) vals[k] = v;
+      }
+      vals.NAME = row.NAME || row.name || geoid;
+      tractMap.set(geoid, vals);
+    }
+    if (!tractMap.size) throw new Error('No tract rows could be read from philly_tracts_acs2024.csv.');
+
+    const sample = tractRows[0] || {};
+    const counts = COUNT_FIELDS.filter(k => Object.prototype.hasOwnProperty.call(sample, k));
+    const medians = Object.keys(MEDIAN_FIELDS).filter(k => Object.prototype.hasOwnProperty.call(sample, k));
+    state.tractFields = { counts, medians, other: [] };
+
+    const buildings = [], grid = new Map(), capByTract = new Map();
+    for (const row of buildingRows) {
+      const lon = toNum(row.lon ?? row.longitude ?? row.LON ?? row.Longitude);
+      const lat = toNum(row.lat ?? row.latitude ?? row.LAT ?? row.Latitude);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+      const tract = cleanGeoid(row.tract_geoid ?? row.TRACT_GEOID ?? row.geoid ?? row.GEOID);
+      if (!tractMap.has(tract)) continue;
+      const capacity = Math.max(0, toNum(row.capacity ?? row.active_res_capacity ?? row.res_units_model) || 0);
+      const vacantRaw = toNum(row.vacant ?? row.vacant_any ?? row.vpi_vacant);
+      const vacant = Number.isFinite(vacantRaw) && vacantRaw > 0;
+      const b = { pt: [lon, lat], tract, capacity, vacant, id: row.building_id ?? row.BUILDING_ID ?? row.bin ?? '' };
+      const i = buildings.push(b) - 1;
+      const key = gridKey(lon, lat);
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(i);
+      if (capacity > 0) capByTract.set(tract, (capByTract.get(tract) || 0) + capacity);
+    }
+    if (!buildings.length) throw new Error('No usable building rows were found in building_weights_web.csv.');
+
+    state.demographic = { ready: true, tracts: tractMap, buildings, grid, capByTract, error: '' };
+    state.dataRev++; statsCache.clear();
+    status.className = 'demo-status';
+    status.innerHTML = `<strong>Demographic model ready.</strong> ${tractMap.size.toLocaleString()} tract controls and ${buildings.length.toLocaleString()} building locations loaded.`;
+    scheduleUpdate();
+  } catch (err) {
+    console.error(err);
+    state.demographic.ready = false;
+    state.demographic.error = err.message || String(err);
+    status.className = 'demo-status error';
+    status.innerHTML = `<strong>Demographics are not active yet.</strong> ${esc(state.demographic.error)}<br><br>Upload <code>data/philly_tracts_acs2024.csv</code> and <code>data/building_weights_web.csv</code>.`;
+    scheduleUpdate();
+  }
+}
+
+async function loadBasePlan() {
+  try {
+    const fc = await fetchGeoJSON(BASE_PLAN_URL);
+    const { areas } = areasFromFC(fc);
+    if (!areas.length) return;
+    state.plan.name = 'Base planning areas';
+    $('#plan-name').value = state.plan.name;
+    areas.forEach(a => addArea(a.name, a.geometry, { quiet: true, color: a.color, visible: a.visible }));
+    state.selected = null;
+    scheduleUpdate();
+  } catch (err) {
+    console.warn(`Could not load ${BASE_PLAN_URL}`, err);
+    toast(`Could not load ${BASE_PLAN_URL}. You can still draw or import planning areas.`, 'error', 6500);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Analysis
+ * ------------------------------------------------------------------ */
+function cleanAoi(geometry) {
+  let f = feature(geometry);
+  try {
+    if (geometry.type === 'Polygon' && turf.kinks(f).features.length) {
+      const parts = turf.unkinkPolygon(f);
+      const u = parts.features.length > 1 ? turf.union(parts) : parts.features[0];
+      if (u) f = feature(u.geometry);
+    }
+  } catch (e) { /* keep original */ }
+  return f;
+}
+
+function safeIntersect(a, b) {
+  try { return turf.intersect(turf.featureCollection([a, b])); } catch { return null; }
+}
+
+function candidateBuildings(bb) {
+  const d = state.demographic;
+  if (!d.ready) return [];
+  const out = [];
+  const x0 = Math.floor(bb[0] / gridSize), x1 = Math.floor(bb[2] / gridSize);
+  const y0 = Math.floor(bb[1] / gridSize), y1 = Math.floor(bb[3] / gridSize);
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+    const ids = d.grid.get(`${x},${y}`);
+    if (ids) for (const i of ids) out.push(d.buildings[i]);
+  }
+  return out;
+}
+
+function aggregateResidential(aoi) {
+  const d = state.demographic;
+  if (!d.ready) return null;
+  const bb = turf.bbox(aoi);
+  const capInside = new Map();
+  let buildingsUsed = 0, residentialUnits = 0, vacantBuildings = 0;
+
+  for (const b of candidateBuildings(bb)) {
+    if (!inBbox(b.pt, bb)) continue;
+    let inside = false;
+    try { inside = turf.booleanPointInPolygon(turf.point(b.pt), aoi); } catch { inside = false; }
+    if (!inside) continue;
+    if (b.vacant) vacantBuildings++;
+    if (b.capacity <= 0) continue;
+    buildingsUsed++;
+    residentialUnits += b.capacity;
+    capInside.set(b.tract, (capInside.get(b.tract) || 0) + b.capacity);
+  }
+
+  const sums = {}, medAcc = {};
+  let tractsUsed = 0;
+  for (const [tract, insideCap] of capInside.entries()) {
+    const totalCap = d.capByTract.get(tract) || 0;
+    const vals = d.tracts.get(tract);
+    if (!vals || totalCap <= 0 || insideCap <= 0) continue;
+    const share = Math.min(1, insideCap / totalCap);
+    tractsUsed++;
+    for (const k of state.tractFields.counts) {
+      const v = vals[k];
+      if (Number.isFinite(v)) sums[k] = (sums[k] || 0) + v * share;
+    }
+    for (const k of state.tractFields.medians) {
+      const v = vals[k];
+      if (!Number.isFinite(v)) continue;
+      const wf = MEDIAN_FIELDS[k];
+      const base = wf && Number.isFinite(vals[wf]) ? vals[wf] : (Number.isFinite(vals.hh_occ) ? vals.hh_occ : 1);
+      const w = base * share;
+      if (w <= 0) continue;
+      medAcc[k] = medAcc[k] || { s: 0, w: 0 };
+      medAcc[k].s += v * w; medAcc[k].w += w;
+    }
+  }
+  for (const [k, a] of Object.entries(medAcc)) sums[k] = a.w > 0 ? a.s / a.w : NaN;
+  return { vals: sums, buildingsUsed, residentialUnits, vacantBuildings, tractsUsed };
+}
+
+function analyze(geometry) {
+  const aoi = cleanAoi(geometry);
+  const areaM2 = turf.area(aoi);
+  return { sqmi: areaM2 / SQM_PER_SQMI, demo: aggregateResidential(aoi) };
+}
+
+function areaStats(area) {
+  const key = `${area.id}|${area.rev}|${state.dataRev}`;
+  if (!statsCache.has(key)) statsCache.set(key, analyze(area.geometry));
+  return statsCache.get(key);
+}
+
+function unionGeometry(areas) {
+  const polys = areas.map(a => feature(a.geometry)).filter(f => isPoly(f.geometry));
+  if (!polys.length) return null;
+  if (polys.length === 1) return polys[0].geometry;
+  try { const u = turf.union(turf.featureCollection(polys)); return u ? u.geometry : null; } catch { return null; }
+}
+
+function planStats(which) {
+  const plan = which === 'compare' ? state.compare : state.plan;
+  if (!plan || !plan.areas.length) return null;
+  const rev = plan.areas.map(a => `${a.id || a.name}:${a.rev || 0}`).join(',');
+  const key = `${which}|${rev}|${state.dataRev}`;
+  if (statsCache.has(key)) return statsCache.get(key);
+  const g = unionGeometry(plan.areas);
+  const r = g ? analyze(g) : null;
+  if (r) r.areaCount = plan.areas.length;
+  statsCache.set(key, r);
+  return r;
+}
+
+function metricValue(m, vals) {
+  if (!vals) return null;
+  const sum = fields => {
+    let s = 0;
+    for (const f of fields) { if (!Number.isFinite(vals[f])) return null; s += vals[f]; }
+    return s;
+  };
+  if (m.type === 'count' || m.type === 'money' || m.type === 'density') return sum(m.num);
+  const n = sum(m.num), d = sum(m.den);
+  return n === null || d === null || d <= 0 ? null : (n / d) * 100;
+}
+const availableMetrics = () => {
+  const have = new Set([...state.tractFields.counts, ...state.tractFields.medians]);
+  return METRICS.filter(m => [...m.num, ...(m.den || [])].every(f => have.has(f)));
+};
+
+function fmt(m, v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '\u2013';
+  if (!m || m.type === 'count') return Math.round(v).toLocaleString('en-US');
+  if (m.type === 'pct') return v.toFixed(1) + '%';
+  if (m.type === 'money') { const step = v >= 10000 ? 100 : 10; return '$' + (Math.round(v / step) * step).toLocaleString('en-US'); }
+  if (m.type === 'density') return Math.round(v).toLocaleString('en-US');
+  return String(v);
+}
+function fmtDiff(m, d) {
+  if (d === null || !Number.isFinite(d)) return '\u2013';
+  const sign = d > 0 ? '+' : d < 0 ? '\u2212' : '';
+  const a = Math.abs(d);
+  if (m.type === 'pct') return a < 0.05 ? 'same' : `${sign}${a.toFixed(1)} pts`;
+  if (m.type === 'money') { const step = a >= 10000 ? 100 : 10; return Math.round(a / step) === 0 ? 'same' : `${sign}$${(Math.round(a / step) * step).toLocaleString('en-US')}`; }
+  if (m.type === 'sqmi') return a < 0.005 ? 'same' : `${sign}${a.toFixed(2)}`;
+  return Math.round(a) === 0 ? 'same' : `${sign}${Math.round(a).toLocaleString('en-US')}`;
+}
+const sqmi = v => (v < 0.1 ? v.toFixed(3) : v.toFixed(2)) + ' sq mi';
+
+/* ------------------------------------------------------------------ *
+ * Plan areas on the map
+ * ------------------------------------------------------------------ */
+const areaStyle = a => ({
+  color: a.color || C.plan,
+  weight: state.selected === a.id ? 3.6 : 2.2,
+  opacity: 1,
+  fillColor: a.color || C.plan,
+  fillOpacity: state.selected === a.id ? 0.28 : 0.14,
+});
+
+function drawArea(a) {
+  if (a.layer) map.removeLayer(a.layer);
+  const layer = L.GeoJSON.geometryToLayer(feature(a.geometry), {});
+  layer.setStyle(areaStyle(a));
+  layer._areaId = a.id;
+  layer.bindTooltip(esc(a.name), { permanent: true, direction: 'center', className: 'area-tag', interactive: false });
+  layer.on('click', () => {
+    select(a.id, true);
+    state.analysisSelection = { type: 'plan', id: a.id };
+    renderDemographics();
+    showTab('demographics');
+  });
+  layer.on('pm:edit pm:dragend pm:rotateend', () => {
+    if (a.layer !== layer || !map.hasLayer(layer)) return;
+    a.geometry = layer.toGeoJSON().geometry; a.rev++; scheduleUpdate();
+  });
+  if (a.visible !== false) layer.addTo(map);
+  a.layer = layer;
+}
+
+function addArea(name, geometry, { quiet = false, color = null, visible = true } = {}) {
+  const a = {
+    id: nextId++,
+    name: name || `Area ${state.plan.areas.length + 1}`,
+    geometry,
+    rev: 0,
+    layer: null,
+    color: color || AREA_COLORS[state.plan.areas.length % AREA_COLORS.length],
+    visible: visible !== false,
+  };
+  state.plan.areas.push(a);
+  drawArea(a);
+  if (!quiet) { select(a.id); scheduleUpdate(); }
+  return a;
+}
+
+function setAreaVisible(a, visible) {
+  a.visible = visible;
+  if (!a.layer) return;
+  if (visible && !map.hasLayer(a.layer)) a.layer.addTo(map);
+  if (!visible && map.hasLayer(a.layer)) map.removeLayer(a.layer);
+}
+
+function removeArea(id, { fromMap = false } = {}) {
+  const i = state.plan.areas.findIndex(a => a.id === id);
+  if (i < 0) return;
+  const [a] = state.plan.areas.splice(i, 1);
+  if (!fromMap && a.layer && map.hasLayer(a.layer)) map.removeLayer(a.layer);
+  if (state.selected === id) state.selected = null;
+  if (state.analysisSelection.type === 'plan' && state.analysisSelection.id === id) state.analysisSelection = { type: 'whole' };
+  scheduleUpdate();
+}
+
+function clearPlan() {
+  for (const a of state.plan.areas) if (a.layer && map.hasLayer(a.layer)) map.removeLayer(a.layer);
+  state.plan.areas = []; state.selected = null; state.analysisSelection = { type: 'whole' };
+}
+
+function select(id, fromMap = false) {
+  state.selected = id;
+  state.analysisSelection = id ? { type: 'plan', id } : { type: 'whole' };
+  for (const a of state.plan.areas) if (a.layer) a.layer.setStyle(areaStyle(a));
+  if (fromMap) showTab('demographics');
+  scheduleUpdate();
+}
+
+function linesToPolygon(g) {
+  const lines = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
+  const rings = lines.filter(l => l.length >= 3).map(l => {
+    const ring = l.slice();
+    const [a, b] = [ring[0], ring[ring.length - 1]];
+    if (a[0] !== b[0] || a[1] !== b[1]) ring.push(a);
+    return ring;
+  }).filter(r => r.length >= 4);
+  if (!rings.length) return null;
+  return rings.length === 1 ? { type: 'Polygon', coordinates: [rings[0]] } : { type: 'MultiPolygon', coordinates: rings.map(r => [r]) };
+}
+
+function areasFromFC(fc) {
+  let converted = 0, skipped = 0;
+  const out = [];
+  fc.features.forEach(f => {
+    let g = f.geometry;
+    if (g.type === 'LineString' || g.type === 'MultiLineString') { g = linesToPolygon(g); if (g) converted++; }
+    if (!g || !isPoly(g)) { skipped++; return; }
+    const p = f.properties || {};
+    const name = p.name ?? p.Name ?? p.NAME ?? p.title ?? p.label ?? p.area_name ?? '';
+    out.push({ name: String(name || '').trim(), geometry: g, color: p.color, visible: p.visible !== false && p.visible !== 'false' });
+  });
+  return { areas: out, converted, skipped };
+}
+
+map.on('pm:create', e => {
+  const g = e.layer.toGeoJSON().geometry;
+  map.removeLayer(e.layer);
+  addArea(null, g);
+  showTab('plan');
+});
+map.on('pm:remove', e => { if (e.layer && e.layer._areaId) removeArea(e.layer._areaId, { fromMap: true }); });
+map.on('pm:cut', e => {
+  const id = e.originalLayer && e.originalLayer._areaId;
+  if (!id) return;
+  const a = state.plan.areas.find(x => x.id === id);
+  if (!a) return;
+  const g = e.layer && e.layer.toGeoJSON ? e.layer.toGeoJSON().geometry : null;
+  if (e.layer) map.removeLayer(e.layer);
+  if (!g || !isPoly(g)) { removeArea(id); return; }
+  a.geometry = g; a.rev++; a.layer = null; drawArea(a); scheduleUpdate();
+});
+
+/* ------------------------------------------------------------------ *
+ * Saving and opening plans
+ * ------------------------------------------------------------------ */
+function planFeatureCollection() {
+  const metrics = availableMetrics();
+  return {
+    type: 'FeatureCollection',
+    planner: { app: 'area-planner', version: 1, name: state.plan.name, saved: new Date().toISOString() },
+    features: state.plan.areas.map(a => {
+      const r = areaStats(a);
+      const props = { name: a.name, color: a.color, visible: a.visible !== false, sq_mi: Number(r.sqmi.toFixed(4)) };
+      if (r.demo) for (const m of metrics) {
+        const v = metricValue(m, r.demo.vals);
+        if (v !== null) props[m.prop] = Number(v.toFixed(m.type === 'pct' ? 2 : 0));
+      }
+      return { type: 'Feature', properties: props, geometry: a.geometry };
+    }),
+  };
+}
+
+function savePlan() {
+  if (!state.plan.areas.length) return toast('Add at least one area before saving the plan.', 'error');
+  download(`${slug(state.plan.name)}_${today()}.geojson`, JSON.stringify(planFeatureCollection()));
+  toast(`Saved \u201c${state.plan.name}.\u201d Open it later with Open plan, or load it in Compare.`);
+}
+
+async function importAreas({ replace = false } = {}) {
+  const file = await pickFile();
+  if (!file) return;
+  try {
+    const res = await readGeoFile(file);
+    if (res.workspace) return openWorkspace(res.workspace);
+    const { areas, converted, skipped } = areasFromFC(res.fc);
+    if (!areas.length) throw new Error(`${file.name} has no polygons or outlines to use as areas.`);
+    if (replace) {
+      clearPlan();
+      state.plan.name = (res.meta && res.meta.name) || file.name.replace(/\.[^.]+$/, '');
+      $('#plan-name').value = state.plan.name;
+    }
+    areas.forEach(a => addArea(a.name, a.geometry, { quiet: true, color: a.color, visible: a.visible }));
+    state.selected = null;
+    fitTo(state.plan.areas.map(a => a.layer));
+    showTab('plan'); scheduleUpdate();
+    const bits = [`${replace ? 'Opened' : 'Added'} ${areas.length} area${areas.length === 1 ? '' : 's'}.`];
+    if (converted) bits.push(`Closed ${converted} outline${converted === 1 ? '' : 's'} drawn as lines.`);
+    if (skipped) bits.push(`Skipped ${skipped} point${skipped === 1 ? '' : 's'}.`);
+    toast(bits.join(' '));
+  } catch (err) {
+    console.error(err);
+    toast(err.message || `Couldn\u2019t read ${file.name}.`, 'error');
+  }
+}
+
+async function loadCompare() {
+  const file = await pickFile();
+  if (!file) return;
+  try {
+    const res = await readGeoFile(file);
+    if (res.workspace) throw new Error('That\u2019s a workspace file. Use Open workspace in the Data tab, or pick a saved plan.');
+    const { areas } = areasFromFC(res.fc);
+    if (!areas.length) throw new Error(`${file.name} has no polygons or outlines to compare.`);
+    setCompare({
+      name: (res.meta && res.meta.name) || file.name.replace(/\.[^.]+$/, ''),
+      saved: res.meta && res.meta.saved,
+      areas: areas.map((a, i) => ({ name: a.name || `Area ${i + 1}`, geometry: a.geometry, id: `c${i}`, rev: 0 })),
+    });
+    showTab('compare');
+    toast(`Loaded \u201c${state.compare.name}\u201d for comparison.`);
+  } catch (err) {
+    console.error(err);
+    toast(err.message || `Couldn\u2019t read ${file.name}.`, 'error');
+  }
+}
+
+function setCompare(c) {
+  if (state.compare && state.compare.layer) map.removeLayer(state.compare.layer);
+  state.compare = c;
+  if (c) {
+    c.visible = c.visible !== false;
+    c.layer = L.geoJSON({ type: 'FeatureCollection', features: c.areas.map(a => ({ type: 'Feature', properties: { name: a.name }, geometry: a.geometry })) }, {
+      pane: 'comparePane', pmIgnore: true,
+      style: { color: C.harbor, weight: 2.2, dashArray: '6 5', fillColor: C.harbor, fillOpacity: 0.07 },
+      onEachFeature: (f, l) => l.bindTooltip(esc(f.properties.name), { direction: 'top', className: 'compare-tag' }),
+    });
+    if (c.visible) c.layer.addTo(map);
+  }
+  scheduleUpdate();
+}
+
+function fitTo(layers) {
+  const b = L.latLngBounds([]);
+  layers.filter(Boolean).forEach(l => { if (l.getBounds) b.extend(l.getBounds()); });
+  if (b.isValid()) map.fitBounds(b, { padding: [30, 30], maxZoom: 17 });
+}
+
+/* workspace */
+function saveWorkspace() {
+  const ws = {
+    app: 'area-planner-workspace', version: 1, saved: new Date().toISOString(),
+    choro: state.choro,
+    layers: Object.fromEntries(Object.entries(state.layers).map(([k, e]) => [k, {
+      fileName: e.fileName, labelField: e.labelField, visible: e.visible,
+      fc: { type: 'FeatureCollection', features: e.fc.features },
+    }])),
+    plan: { name: state.plan.name, areas: state.plan.areas.map(a => ({ name: a.name, geometry: a.geometry, color: a.color, visible: a.visible })) },
+    compare: state.compare ? { name: state.compare.name, saved: state.compare.saved, areas: state.compare.areas.map(a => ({ name: a.name, geometry: a.geometry })) } : null,
+  };
+  if (!Object.keys(ws.layers).length && !ws.plan.areas.length) return toast('There\u2019s nothing to save yet. Add a layer or an area first.', 'error');
+  download(`area_planner_workspace_${today()}.json`, JSON.stringify(ws), 'application/json');
+  toast('Saved the workspace.');
+}
+
+function openWorkspace(ws) {
+  try {
+    Object.keys(state.layers).forEach(k => clearSlot(k));
+    for (const s of SLOTS) {
+      const l = ws.layers && ws.layers[s.key];
+      if (l && l.fc && l.fc.features && l.fc.features.length) {
+        setSlot(s.key, normalizeFC(l.fc), l.fileName || 'workspace', { labelField: l.labelField, visible: l.visible, choro: s.key === 'tracts' ? ws.choro : undefined });
+      }
+    }
+    clearPlan();
+    state.plan.name = (ws.plan && ws.plan.name) || 'Untitled plan';
+    $('#plan-name').value = state.plan.name;
+    ((ws.plan && ws.plan.areas) || []).forEach(a => addArea(a.name, a.geometry, { quiet: true, color: a.color, visible: a.visible }));
+    setCompare(ws.compare && ws.compare.areas && ws.compare.areas.length
+      ? { name: ws.compare.name, saved: ws.compare.saved, areas: ws.compare.areas.map((a, i) => ({ ...a, id: `c${i}`, rev: 0 })) }
+      : null);
+    const all = [...Object.values(state.layers).map(e => e.visible ? e.leaflet : null), ...state.plan.areas.map(a => a.layer)];
+    fitTo(state.plan.areas.length ? state.plan.areas.map(a => a.layer) : all);
+    scheduleUpdate();
+    toast('Opened the workspace.');
+  } catch (err) {
+    console.error(err);
+    toast('This workspace file couldn\u2019t be opened. ' + (err.message || ''), 'error');
+  }
+}
+
+function autosave() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      name: state.plan.name, areas: state.plan.areas.map(a => ({ name: a.name, geometry: a.geometry, color: a.color, visible: a.visible })),
+    }));
+  } catch (e) { /* storage full or unavailable */ }
+}
+
+function exportCSV() {
+  const metrics = availableMetrics();
+  const header = ['plan', 'area', 'sq_mi', ...metrics.map(m => m.prop), 'residential_buildings', 'residential_capacity', 'tracts_used'];
+  const rowFor = (label, r) => [state.plan.name, label, r.sqmi.toFixed(4),
+    ...metrics.map(m => { const v = r.demo ? metricValue(m, r.demo.vals) : null; return v === null ? '' : v.toFixed(m.type === 'pct' ? 2 : 0); }),
+    r.demo ? r.demo.buildingsUsed : '', r.demo ? Math.round(r.demo.residentialUnits || 0) : '', r.demo ? r.demo.tractsUsed : ''];
+  const rows = state.plan.areas.map(a => rowFor(a.name, areaStats(a)));
+  const total = planStats('plan'); if (total) rows.push(rowFor('Whole plan', total));
+  const csv = [header, ...rows].map(r => r.map(v => { const x = String(v ?? ''); return /[",\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x; }).join(',')).join('\n');
+  download(`${slug(state.plan.name)}_demographics_${today()}.csv`, csv, 'text/csv');
+}
+
+/* ------------------------------------------------------------------ *
+ * Rendering
+ * ------------------------------------------------------------------ */
+function showTab(name) {
+  for (const t of ['data', 'demographics', 'plan', 'compare']) {
+    $(`#tab-${t}`).setAttribute('aria-selected', String(t === name));
+    $(`#panel-${t}`).hidden = t !== name;
+  }
+  if (name === 'demographics') renderDemographics();
+  if (name === 'compare') renderCompare();
+}
+$$('.tab').forEach(t => t.addEventListener('click', () => showTab(t.id.replace('tab-', ''))));
+
+function renderSlots() {
+  $('#slots').innerHTML = SLOTS.map(s => {
+    const e = state.layers[s.key];
+    const keyCls = s.kind === 'point' ? 'key point' : 'key';
+    let body = `<p class="help">${esc(s.help)}</p>`;
+    if (e) {
+      body += `<p class="status"><strong>${e.fc.features.length.toLocaleString()}</strong> features loaded</p>
+        <div class="row controls"><label class="inline"><input type="checkbox" data-act="toggle" ${e.visible ? 'checked' : ''}> Show</label></div>
+        <div class="row controls"><button class="btn quiet small" data-act="zoom">Zoom to</button></div>`;
+    } else {
+      body += `<p class="status">File not loaded.</p><p class="fieldnote">Expected: <code>${esc(s.url)}</code></p>`;
+    }
+    return `<div class="slot" data-key="${s.key}"><span class="${keyCls}" style="--c:${s.color}"></span><div><h2>${esc(s.title)}</h2>${body}</div></div>`;
+  }).join('');
+}
+
+$('#slots').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn || btn.type === 'checkbox') return;
+  const key = btn.closest('.slot').dataset.key;
+  if (btn.dataset.act === 'zoom') fitTo([state.layers[key] && state.layers[key].leaflet]);
+});
+$('#slots').addEventListener('change', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const key = el.closest('.slot').dataset.key;
+  const entry = state.layers[key];
+  if (!entry) return;
+  if (el.dataset.act === 'toggle') {
+    entry.visible = el.checked;
+    if (entry.visible) entry.leaflet.addTo(map); else map.removeLayer(entry.leaflet);
+  }
+});
+
+let listIds = '';
+function renderPlanList() {
+  const areas = state.plan.areas;
+  $('#plan-count').textContent = areas.length;
+  $('#plan-empty').hidden = areas.length > 0;
+  const ids = areas.map(a => `${a.id}:${a.color}:${a.visible}`).join(',');
+  const list = $('#area-list');
+  if (ids !== listIds) {
+    listIds = ids;
+    list.innerHTML = areas.map(a => `
+      <li class="area-row" data-id="${a.id}" style="--area-color:${a.color}">
+        <input class="area-toggle" type="checkbox" data-act="toggle-area" ${a.visible !== false ? 'checked' : ''} aria-label="Show ${esc(a.name)}">
+        <span class="area-swatch" style="background:${a.color}" title="${a.color}"></span>
+        <div>
+          <input class="area-name" value="${esc(a.name)}" aria-label="Area name">
+          <div class="area-sub"><span class="area-meta"></span><span class="row">
+            <button class="icon-btn" data-act="stats">Demographics</button>
+            <button class="icon-btn" data-act="zoom">Zoom</button>
+            <button class="icon-btn" data-act="remove">Remove</button>
+          </span></div>
+        </div>
+      </li>`).join('');
+  }
+  for (const a of areas) {
+    const li = list.querySelector(`[data-id="${a.id}"]`);
+    if (!li) continue;
+    li.classList.toggle('selected', state.selected === a.id);
+    const r = areaStats(a);
+    const pop = r.demo && Number.isFinite(r.demo.vals.hh_pop) ? `, ~${fmt(null, r.demo.vals.hh_pop)} people` : '';
+    li.querySelector('.area-meta').textContent = `${sqmi(r.sqmi)}${pop} • ${a.color}`;
+  }
+  const all = $('#toggle-all-areas');
+  if (all) { all.checked = areas.length > 0 && areas.every(a => a.visible !== false); all.indeterminate = areas.some(a => a.visible !== false) && !all.checked; }
+}
+
+$('#area-list').addEventListener('click', e => {
+  const li = e.target.closest('.area-row'); if (!li) return;
+  const id = Number(li.dataset.id); const a = state.plan.areas.find(x => x.id === id); if (!a) return;
+  const act = e.target.closest('[data-act]');
+  if (act && act.dataset.act === 'remove') { removeArea(id); return; }
+  if (act && act.dataset.act === 'zoom') { fitTo([a.layer]); select(id); return; }
+  if (act && act.dataset.act === 'stats') { select(id); showTab('demographics'); return; }
+  if (!e.target.classList.contains('area-name') && !e.target.classList.contains('area-toggle')) select(id);
+});
+$('#area-list').addEventListener('change', e => {
+  if (!e.target.matches('[data-act="toggle-area"]')) return;
+  const id = Number(e.target.closest('.area-row').dataset.id); const a = state.plan.areas.find(x => x.id === id); if (!a) return;
+  setAreaVisible(a, e.target.checked); renderPlanList(); autosave();
+});
+$('#area-list').addEventListener('input', e => {
+  if (!e.target.classList.contains('area-name')) return;
+  const id = Number(e.target.closest('.area-row').dataset.id); const a = state.plan.areas.find(x => x.id === id);
+  a.name = e.target.value; if (a.layer) a.layer.setTooltipContent(esc(a.name || 'Unnamed area'));
+  renderDemographics(); renderCompareSoon(); autosave();
+});
+
+function statsBlock(r) {
+  if (!state.demographic.ready) return `<p class="empty" style="padding:12px 0">Demographics are unavailable until <code>philly_tracts_acs2024.csv</code> and <code>building_weights_web.csv</code> load successfully.</p>`;
+  if (!r.demo || !r.demo.buildingsUsed) return `<p class="empty" style="padding:12px 0">No population-eligible modeled residential buildings fall inside this polygon.</p>`;
+  const metrics = availableMetrics();
+  const groups = [...new Set(metrics.map(m => m.group))];
+  let html = groups.map(g => `<div class="group"><h3>${esc(g)}</h3><dl class="stats">${metrics.filter(m => m.group === g).map(m => `<dt>${esc(m.label)}</dt><dd>${esc(fmt(m, metricValue(m, r.demo.vals)))}</dd>`).join('')}</dl></div>`).join('');
+  html += `<div class="group"><h3>Model coverage</h3><dl class="stats">
+    <dt>Residential buildings represented</dt><dd>${r.demo.buildingsUsed.toLocaleString()}</dd>
+    <dt>Modeled residential-unit capacity</dt><dd>${Math.round(r.demo.residentialUnits || 0).toLocaleString()}</dd>
+    <dt>ACS tracts contributing</dt><dd>${(r.demo.tractsUsed || 0).toLocaleString()}</dd>
+    <dt>Likely vacant buildings inside</dt><dd>${(r.demo.vacantBuildings || 0).toLocaleString()}</dd>
+  </dl></div>`;
+  return html;
+}
+
+function analysisResult() {
+  const sel = state.analysisSelection || { type: 'whole' };
+  if (sel.type === 'reference' && sel.geometry) return { name: sel.name || 'Selected polygon', r: analyze(sel.geometry), key: '__reference__' };
+  if (sel.type === 'plan') {
+    const a = state.plan.areas.find(x => x.id === sel.id);
+    if (a) return { name: a.name || 'Unnamed area', r: areaStats(a), key: String(a.id) };
+  }
+  return { name: 'Whole plan', r: planStats('plan'), key: '' };
+}
+
+function renderDemographics() {
+  const selectEl = $('#demo-scope');
+  if (!selectEl) return;
+  const cur = analysisResult();
+  const refOption = state.analysisSelection.type === 'reference' ? `<option value="__reference__" selected>${esc(state.analysisSelection.name || 'Selected map polygon')}</option>` : '';
+  selectEl.innerHTML = `${refOption}<option value="" ${cur.key === '' ? 'selected' : ''}>Whole plan</option>` + state.plan.areas.map(a => `<option value="${a.id}" ${cur.key === String(a.id) ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
+  const box = $('#demographics');
+  if (!cur.r) { box.innerHTML = `<p class="empty">Add or load at least one planning polygon.</p>`; return; }
+  const summary = cur.r.demo && cur.r.demo.buildingsUsed ? `${sqmi(cur.r.sqmi)} • ${cur.r.demo.buildingsUsed.toLocaleString()} residential building locations • ${cur.r.demo.tractsUsed.toLocaleString()} ACS tracts` : sqmi(cur.r.sqmi);
+  box.innerHTML = `<div class="details-head"><h2>${esc(cur.name)}</h2></div><p class="summary">${summary}</p>${statsBlock(cur.r)}
+    <p class="note">ACS tract counts are allocated to the selected polygon by its share of modeled residential building capacity within each tract. Percentages are recalculated from allocated numerator and denominator counts. Median income, rent, and home value are weighted approximations.</p>
+    <div class="row" style="margin-top:12px"><button class="btn quiet small" id="btn-csv">Download plan demographics (CSV)</button></div>`;
+  $('#btn-csv').addEventListener('click', exportCSV);
+}
+
+$('#demo-scope').addEventListener('change', e => {
+  const v = e.target.value;
+  if (v === '__reference__') return;
+  state.analysisSelection = v ? { type: 'plan', id: Number(v) } : { type: 'whole' };
+  state.selected = v ? Number(v) : null;
+  renderDemographics(); renderPlanList();
+});
+
+function quickCompareTable(a, b) {
+  if (!a || !b) return '<p class="empty">Choose two planning polygons to compare.</p>';
+  const ra = areaStats(a), rb = areaStats(b), metrics = availableMetrics();
+  const row = (label, m, av, bv) => {
+    const d = av !== null && bv !== null && Number.isFinite(av) && Number.isFinite(bv) ? av - bv : null;
+    return `<tr><td>${esc(label)}</td><td>${esc(fmt(m, av))}</td><td>${esc(fmt(m, bv))}</td><td class="diff">${esc(fmtDiff(m, d))}</td></tr>`;
+  };
+  let rows = '';
+  for (const g of [...new Set(metrics.map(m => m.group))]) {
+    rows += `<tr class="grp"><td colspan="4">${esc(g)}</td></tr>`;
+    for (const m of metrics.filter(x => x.group === g)) rows += row(m.label, m, metricValue(m, ra.demo && ra.demo.vals), metricValue(m, rb.demo && rb.demo.vals));
+  }
+  return `<div class="table-wrap"><table class="cmp"><thead><tr><th></th><th>${esc(a.name)}</th><th>${esc(b.name)}</th><th>A − B</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function renderCompare() {
+  const box = $('#compare'); const areas = state.plan.areas;
+  if (!state.compareA && areas[0]) state.compareA = areas[0].id;
+  if (!state.compareB && areas[1]) state.compareB = areas[1].id;
+  const a = areas.find(x => x.id === Number(state.compareA));
+  const b = areas.find(x => x.id === Number(state.compareB));
+  const options = id => areas.map(x => `<option value="${x.id}" ${x.id === Number(id) ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+  let html = `<div class="cmp-head"><h2 style="margin:0;font-size:16px">Compare planning polygons</h2><p class="summary" style="margin:0">Compare demographics directly between any two of the loaded planning polygons.</p></div>`;
+  if (areas.length >= 2) {
+    html += `<div class="compare-controls"><label>Area A<select id="cmp-area-a">${options(state.compareA)}</select></label><label>Area B<select id="cmp-area-b">${options(state.compareB)}</select></label></div>${quickCompareTable(a,b)}`;
+  } else html += '<p class="empty">At least two planning polygons are needed for a direct comparison.</p>';
+
+  html += `<div class="compare-section"><div class="cmp-head"><h2 style="margin:0;font-size:16px">Compare with a saved plan</h2>`;
+  const c = state.compare;
+  if (!c) {
+    html += `<p class="summary" style="margin:0">Load a previously saved GeoJSON plan to compare the entire current plan against it.</p><div><button class="btn" id="btn-load-cmp">Load saved plan</button></div></div></div>`;
+  } else {
+    const cur = planStats('plan'); const old = planStats('compare'); const metrics = availableMetrics();
+    const row = (label, m, av, bv) => { const d = av !== null && bv !== null && Number.isFinite(av) && Number.isFinite(bv) ? av-bv : null; return `<tr><td>${esc(label)}</td><td>${esc(fmt(m,av))}</td><td>${esc(fmt(m,bv))}</td><td class="diff">${esc(fmtDiff(m,d))}</td></tr>`; };
+    let rows = '';
+    if (cur && old && cur.demo && old.demo) for (const g of [...new Set(metrics.map(m => m.group))]) { rows += `<tr class="grp"><td colspan="4">${esc(g)}</td></tr>`; for (const m of metrics.filter(x => x.group===g)) rows += row(m.label,m,metricValue(m,cur.demo.vals),metricValue(m,old.demo.vals)); }
+    html += `<div class="legend-pair"><div><span class="swatch cur"></span>${esc(state.plan.name)} (current)</div><div><span class="swatch cmp"></span>${esc(c.name)}</div></div><div class="row"><label class="inline"><input type="checkbox" id="cmp-visible" ${c.visible ? 'checked' : ''}> Show saved plan on map</label></div><div class="row"><button class="btn quiet small" id="btn-cmp-replace">Load different plan</button><button class="btn quiet small" id="btn-cmp-clear">Stop comparing</button></div></div>${rows ? `<div class="table-wrap"><table class="cmp"><thead><tr><th></th><th>Current</th><th>Saved</th><th>Difference</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="empty">Demographic data are not ready for one or both plans.</p>'}</div>`;
+  }
+  box.innerHTML = html;
+  $('#cmp-area-a')?.addEventListener('change', e => { state.compareA = Number(e.target.value); renderCompare(); });
+  $('#cmp-area-b')?.addEventListener('change', e => { state.compareB = Number(e.target.value); renderCompare(); });
+  $('#btn-load-cmp')?.addEventListener('click', loadCompare);
+  $('#cmp-visible')?.addEventListener('change', e => { c.visible = e.target.checked; if (c.visible) c.layer.addTo(map); else map.removeLayer(c.layer); });
+  $('#btn-cmp-replace')?.addEventListener('click', loadCompare);
+  $('#btn-cmp-clear')?.addEventListener('click', () => setCompare(null));
+}
+
+let updateTimer = null;
+function scheduleUpdate() {
+  clearTimeout(updateTimer);
+  updateTimer = setTimeout(() => {
+    for (const a of state.plan.areas) if (a.layer) a.layer.setStyle(areaStyle(a));
+    renderPlanList(); renderDemographics(); renderCompare(); autosave();
+  }, 60);
+}
+
+/* ------------------------------------------------------------------ *
+ * Wiring
+ * ------------------------------------------------------------------ */
+$('#plan-name').addEventListener('input', e => { state.plan.name = e.target.value || 'Untitled plan'; renderCompareSoon(); autosave(); });
+let cmpTimer = null;
+function renderCompareSoon() { clearTimeout(cmpTimer); cmpTimer = setTimeout(renderCompare, 200); }
+
+$('#btn-draw').addEventListener('click', () => {
+  map.pm.enableDraw('Polygon', { snappable: true });
+  toast('Click the map to place corners. Click the first corner again to finish.');
+});
+$('#btn-import').addEventListener('click', () => importAreas());
+$('#btn-open-plan').addEventListener('click', () => importAreas({ replace: true }));
+$('#btn-save-plan').addEventListener('click', savePlan);
+$('#toggle-all-areas').addEventListener('change', e => { state.plan.areas.forEach(a => setAreaVisible(a, e.target.checked)); renderPlanList(); autosave(); });
+
+$('#btn-new-plan').addEventListener('click', async () => {
+  if (state.plan.areas.length && !confirm('Reset to the original planning polygons? Save your current plan first if you want to keep its changes.')) return;
+  clearPlan();
+  await loadBasePlan();
+  if (state.plan.areas.length) fitTo(state.plan.areas.map(a => a.layer));
+  scheduleUpdate();
+});
+
+async function initializeApp() {
+  renderSlots();
+  await loadBaseLayers();
+  await loadDemographicSources();
+
+  let restored = false;
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (saved && saved.areas && saved.areas.length) {
+      state.plan.name = saved.name || 'Untitled plan';
+      $('#plan-name').value = state.plan.name;
+      saved.areas.forEach(a => addArea(a.name, a.geometry, { quiet: true, color: a.color, visible: a.visible }));
+      restored = true;
+      toast(`Restored \u201c${state.plan.name}\u201d from your last session.`);
+    }
+  } catch (e) { /* ignore */ }
+
+  if (!restored) await loadBasePlan();
+
+  if (state.plan.areas.length) fitTo(state.plan.areas.map(a => a.layer));
+  else if (state.layers.city && state.layers.city.leaflet) fitTo([state.layers.city.leaflet]);
+
+  renderSlots();
+  scheduleUpdate();
+}
+
+initializeApp();
+window.__planner = { state, map, addArea, setSlot, analyze, readGeoFile, loadBaseLayers, loadBasePlan };
+})();
+</script>
+</body>
+</html>
