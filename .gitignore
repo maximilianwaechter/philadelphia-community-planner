@@ -1,0 +1,30 @@
+# secrets
+.env
+
+# big or private data (see README)
+data/raw/
+data/processed/
+*.gpkg
+*.gpkg-journal
+*.shp
+*.dbf
+*.shx
+*.prj
+*.cpg
+
+# member lists must never be committed, even by accident
+*gateway_clients*
+*Gateway Clients*
+*outreach_geocoded*
+
+# python / editors / OS
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

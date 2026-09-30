@@ -1,0 +1,1916 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Philadelphia Community Area Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.20.2/dist/leaflet-geoman.css">
+<style>
+  :root {
+    --ink: #1C2433;
+    --ink-2: #505B6E;
+    --paper: #FFFFFF;
+    --panel: #F2F4F7;
+    --rule: #D6DCE4;
+    --rule-soft: #E8ECF1;
+    --plan: #6B2C91;
+    --harbor: #1F6F78;
+    --cherry: #9D2235;
+    --police: #27407A;
+    --amber: #C98A1B;
+    --focus: #2B6CB0;
+    --font: 'Public Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: var(--font); font-size: 15px; line-height: 1.45; color: var(--ink); background: var(--panel); -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  .app { display: grid; grid-template-columns: minmax(340px, 410px) 1fr; height: 100%; }
+  #map { height: 100%; background: #E9ECEF; }
+  .leaflet-container { font-family: var(--font); }
+
+  .panel { background: var(--paper); border-right: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+  .brand { padding: 18px 20px 10px; }
+  .brand h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand p { margin: 2px 0 0; font-size: 13.5px; color: var(--ink-2); }
+
+  .tabs { display: flex; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--rule); }
+  .tab { background: none; border: 0; border-bottom: 3px solid transparent; cursor: pointer; padding: 10px 6px 8px; font-weight: 600; color: var(--ink-2); font-size: 13.5px; }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .tab .count { display: inline-block; min-width: 20px; margin-left: 4px; padding: 0 6px; border-radius: 10px; background: var(--rule-soft); font-size: 12px; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+  .panels { flex: 1; overflow: auto; min-height: 0; }
+  .tabpanel { padding: 0 0 32px; }
+  .lead { margin: 0; padding: 14px 20px; font-size: 14px; color: var(--ink-2); max-width: 62ch; }
+
+  .btn { border: 1px solid var(--ink); background: var(--ink); color: #fff; cursor: pointer; border-radius: 6px; padding: 7px 12px; font-size: 14px; font-weight: 600; line-height: 1.2; }
+  .btn:hover { background: #2C3850; }
+  .btn.plan { background: var(--plan); border-color: var(--plan); }
+  .btn.plan:hover { background: #5A2379; }
+  .btn.quiet { background: var(--paper); color: var(--ink); border-color: var(--rule); }
+  .btn.quiet:hover { border-color: var(--ink-2); }
+  .btn.small { padding: 4px 9px; font-size: 13px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  select.small { font-size: 13px; padding: 3px 6px; border: 1px solid var(--rule); border-radius: 5px; background: #fff; max-width: 100%; }
+  label.inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+
+  /* layer slots */
+  .slot { display: grid; grid-template-columns: 16px 1fr; gap: 0 12px; padding: 14px 20px; border-top: 1px solid var(--rule); }
+  .key { width: 14px; height: 14px; margin-top: 4px; border: 2px solid var(--c); border-radius: 2px; background: color-mix(in srgb, var(--c) var(--fillpct, 20%), transparent); }
+  .key.point { border-radius: 50%; background: var(--c); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--c); }
+  .key.heat { border: 0; border-radius: 50%; background: radial-gradient(circle, var(--c), transparent 70%); }
+  .slot h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .slot .help { margin: 1px 0 0; font-size: 13px; color: var(--ink-2); }
+  .slot .status { margin: 8px 0 0; font-size: 13.5px; }
+  .slot .status strong { font-weight: 600; }
+  .slot .controls { margin-top: 8px; }
+  .fieldnote { margin: 6px 0 0; font-size: 12.5px; color: var(--ink-2); }
+
+  /* plan */
+  .plan-head { padding: 16px 20px 6px; }
+  .plan-name { width: 100%; border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 2px 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  .plan-name:hover, .plan-name:focus { border-bottom-color: var(--rule); outline: none; }
+  .plan-name:focus-visible { border-bottom-color: var(--focus); }
+  .plan-actions { padding: 6px 20px 14px; display: grid; gap: 8px; }
+  .area-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+  .area-row { display: grid; grid-template-columns: 22px 20px 1fr; gap: 0 8px; align-items: center; padding: 8px 20px 8px 16px; border-bottom: 1px solid var(--rule-soft); cursor: pointer; }
+  .area-toggle { width: 16px; height: 16px; margin: 0; }
+  .area-swatch { width: 18px; height: 18px; border-radius: 4px; border: 2px solid var(--sw); background: color-mix(in srgb, var(--sw) var(--swfill, 30%), #fff); cursor: pointer; padding: 0; }
+  .area-swatch:hover { box-shadow: 0 0 0 2px var(--rule); }
+  .area-row.selected { box-shadow: inset 3px 0 0 var(--area-color, var(--plan)); background: #F7F7FA; }
+  .area-name { width: 100%; border: 0; background: transparent; padding: 2px 0; font-weight: 600; border-bottom: 1px dashed transparent; }
+  .area-name:hover, .area-name:focus { border-bottom-color: var(--ink-2); outline: none; }
+  .area-meta { font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .area-badge { font-size: 11px; font-weight: 600; padding: 0 5px; border-radius: 3px; margin-left: 6px; vertical-align: 1px; }
+  .area-badge.new { background: #E6F4EA; color: #1E6B34; }
+  .area-badge.edited { background: #FBF4E6; color: #7A5410; }
+  .area-row .row { gap: 2px; }
+  .area-sub { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .icon-btn { border: 1px solid transparent; background: none; cursor: pointer; border-radius: 5px; padding: 1px 6px; font-size: 12.5px; color: var(--ink-2); }
+  .icon-btn:hover { border-color: var(--rule); color: var(--ink); }
+
+  .empty { margin: 0; padding: 18px 20px; color: var(--ink-2); font-size: 14px; max-width: 60ch; }
+  .empty strong { color: var(--ink); }
+
+  .details { padding: 6px 20px 0; }
+  .details-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 16px; }
+  .details-head h2 { margin: 0; font-size: 16px; }
+  .summary { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-2); }
+  .group h3 { margin: 18px 0 4px; font-size: 13.5px; font-weight: 700; }
+  .stats { display: grid; grid-template-columns: 1fr auto; margin: 0; }
+  .stats dt, .stats dd { margin: 0; padding: 5px 0; border-bottom: 1px solid var(--rule-soft); font-size: 14px; }
+  .stats dd { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; padding-left: 12px; }
+  .note { margin: 16px 0 0; font-size: 12.5px; color: var(--ink-2); max-width: 64ch; }
+
+  /* compare */
+  .cmp-head { padding: 16px 20px 4px; display: grid; gap: 10px; }
+  .legend-pair { display: grid; gap: 6px; }
+  .legend-pair div { display: flex; gap: 8px; align-items: center; font-size: 14px; font-weight: 600; }
+  .swatch { width: 18px; height: 12px; border-radius: 2px; flex: none; }
+  .swatch.cur { background: color-mix(in srgb, var(--plan) 22%, transparent); border: 2px solid var(--plan); }
+  .swatch.cmp { background: color-mix(in srgb, var(--harbor) 12%, transparent); border: 2px dashed var(--harbor); }
+  .table-wrap { overflow-x: auto; padding: 0 20px; }
+  table.cmp { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 12px; }
+  table.cmp th, table.cmp td { padding: 5px 4px; text-align: right; border-bottom: 1px solid var(--rule-soft); font-variant-numeric: tabular-nums; }
+  table.cmp th:first-child, table.cmp td:first-child { text-align: left; padding-left: 0; }
+  table.cmp thead th { font-size: 12.5px; font-weight: 600; color: var(--ink-2); border-bottom: 1.5px solid var(--ink); vertical-align: bottom; }
+  table.cmp tr.grp td { text-align: left; font-weight: 700; padding-top: 14px; border-bottom: 0; }
+  table.cmp td:not(:first-child) { white-space: nowrap; }
+  table.cmp td.diff { color: var(--ink-2); }
+
+  .section-title { margin: 18px 20px 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); }
+  .source-card { margin: 12px 20px 0; padding: 12px; border: 1px solid var(--rule); border-radius: 7px; background: var(--panel); }
+  .source-card h3 { margin: 0 0 4px; font-size: 14px; }
+  .source-card p { margin: 4px 0; font-size: 12.5px; color: var(--ink-2); }
+  .source-card a { color: var(--focus); text-decoration: none; }
+  .source-card a:hover { text-decoration: underline; }
+  .demo-status { margin: 12px 20px; padding: 10px 12px; border-left: 3px solid var(--focus); background: #F4F8FC; font-size: 13px; }
+  .demo-status.error { border-left-color: #8A1C1C; background: #FFF4F4; }
+  .demo-picker { padding: 14px 20px 0; }
+  .demo-picker label { display:block; font-size:12.5px; font-weight:600; color:var(--ink-2); margin-bottom:4px; }
+  .demo-picker select { width:100%; padding:7px 8px; border:1px solid var(--rule); border-radius:5px; background:#fff; }
+  .compare-section { border-top:1px solid var(--rule); padding-top:10px; margin-top:10px; }
+  .compare-controls { padding: 8px 20px; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .compare-controls label { font-size:12px; color:var(--ink-2); }
+  .compare-controls select { width:100%; padding:5px; border:1px solid var(--rule); border-radius:5px; background:#fff; margin-top:3px; }
+
+  /* map extras */
+  .leaflet-tooltip.area-tag { background: transparent; border: 0; box-shadow: none; padding: 0; }
+  .leaflet-tooltip.area-tag .tag { display: inline-block; border-radius: 3px; padding: 2px 7px; font: 600 12px/1.3 var(--font); box-shadow: 0 1px 2px rgba(28, 36, 51, .35); white-space: nowrap; }
+  .leaflet-tooltip.area-tag::before, .leaflet-tooltip.compare-tag::before { display: none; }
+  .leaflet-tooltip.compare-tag { background: #fff; color: var(--harbor); border: 1.5px solid var(--harbor); border-radius: 3px; padding: 1px 6px; font: 600 12px/1.3 var(--font); box-shadow: none; }
+  .leaflet-tooltip.ref-tip { font: 500 12.5px/1.35 var(--font); }
+  .bnd-label { background: none; border: 0; }
+  .bnd-label span { display: inline-block; transform: translate(-50%, -50%); white-space: nowrap; font: 700 11.5px/1 var(--font); color: var(--lc); text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 2px #fff; pointer-events: none; }
+  .leaflet-popup-content { font: 400 13.5px/1.45 var(--font); }
+  .map-legend { background: #fff; padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; box-shadow: 0 1px 4px rgba(28, 36, 51, .25); max-width: 220px; }
+  .map-legend strong { display: block; font-size: 12.5px; margin-bottom: 2px; }
+  .map-legend .ramp { height: 10px; border-radius: 3px; margin: 4px 0 2px; }
+  .map-legend .ends { display: flex; justify-content: space-between; color: var(--ink-2); }
+  .history-ctl a { font-size: 17px; line-height: 30px; text-decoration: none; }
+  .history-ctl a.disabled { color: #bbb; cursor: default; }
+
+  /* color picker */
+  .picker { position: fixed; z-index: 3000; width: 256px; background: #fff; border: 1px solid var(--rule); border-radius: 9px; box-shadow: 0 10px 30px rgba(28, 36, 51, .22); padding: 12px 14px 14px; }
+  .picker h3 { margin: 0 0 10px; font-size: 13.5px; }
+  .wheel { position: relative; width: 176px; height: 176px; margin: 0 auto 10px; border-radius: 50%; cursor: crosshair; touch-action: none;
+    background: radial-gradient(closest-side, #fff, rgba(255,255,255,0)), conic-gradient(red, yellow, lime, aqua, blue, magenta, red); }
+  .wheel .shade { position: absolute; inset: 0; border-radius: 50%; background: #000; pointer-events: none; }
+  .wheel .dot { position: absolute; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.55); transform: translate(-50%, -50%); pointer-events: none; }
+  .picker [hidden] { display: none !important; }
+  .picker .field { display: grid; grid-template-columns: 96px 1fr 40px; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-2); margin-top: 6px; }
+  .picker .field input[type=range] { width: 100%; }
+  .picker .field output { text-align: right; font-variant-numeric: tabular-nums; }
+  .picker .hexrow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  .picker .hexrow input { width: 88px; padding: 3px 6px; border: 1px solid var(--rule); border-radius: 5px; font-size: 13px; font-family: ui-monospace, monospace; }
+  .picker .preview { width: 34px; height: 22px; border-radius: 4px; border: 2px solid; }
+  .picker .swatches { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 2px; }
+  .picker .swatches button { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0,0,0,.2); cursor: pointer; padding: 0; }
+  .picker .actions { display: flex; justify-content: space-between; margin-top: 12px; }
+
+  #toasts { position: fixed; right: 60px; top: 12px; z-index: 2000; display: grid; gap: 8px; justify-items: end; pointer-events: none; }
+  .toast { pointer-events: auto; background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 6px; max-width: 380px; font-size: 14px; box-shadow: 0 4px 14px rgba(28, 36, 51, .25); }
+  .toast.error { background: #8A1C1C; }
+
+  @media (max-width: 820px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 46vh 1fr; }
+    #map { grid-row: 1; }
+    .panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--rule); }
+    .brand { display: none; }
+    .map-legend { font-size: 11px; line-height: 1.35; padding: 6px 8px; }
+    #toasts { right: 12px; left: 12px; justify-items: stretch; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel" aria-label="Planner controls">
+    <header class="brand">
+      <h1>Philadelphia Community Area Planner</h1>
+      <p>Explore reference layers, edit planning areas, and compare modeled demographics.</p>
+    </header>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tab-data" aria-controls="panel-data" aria-selected="true">Layers</button>
+      <button class="tab" role="tab" id="tab-demographics" aria-controls="panel-demographics" aria-selected="false">Demographics</button>
+      <button class="tab" role="tab" id="tab-plan" aria-controls="panel-plan" aria-selected="false">Plan<span class="count" id="plan-count">0</span></button>
+      <button class="tab" role="tab" id="tab-compare" aria-controls="panel-compare" aria-selected="false">Compare</button>
+    </nav>
+    <div class="panels">
+      <section class="tabpanel" id="panel-data" role="tabpanel" aria-labelledby="tab-data">
+        <p class="lead">Turn reference layers on and off, and use <strong>Style</strong> to change a layer's color and transparency. Click a council district, police district, ward, voting division or ZIP code to see its demographics.</p>
+        <div id="slots"></div>
+        <h2 class="section-title">Demographic data sources</h2>
+        <div id="demo-source-status" class="demo-status">Loading demographic sources…</div>
+        <div class="source-card">
+          <h3>Source and QA downloads</h3>
+          <p><a href="data/philly_tracts_acs2024.csv" download>philly_tracts_acs2024.csv</a> — ACS tract totals the model is balanced to.</p>
+          <p><a href="data/tract_model_qa.csv" download>tract_model_qa.csv</a> — tract-by-tract model checks.</p>
+          <p><a href="https://github.com/maximilianwaechter/philadelphia-community-planner/releases" target="_blank" rel="noopener">Full building model downloads (GitHub Releases)</a> — building summary, OPA crosswalk and GeoPackages.</p>
+        </div>
+      </section>
+
+      <section class="tabpanel" id="panel-demographics" role="tabpanel" aria-labelledby="tab-demographics" hidden>
+        <div class="demo-picker">
+          <label for="demo-scope">Demographics for</label>
+          <select id="demo-scope"></select>
+        </div>
+        <div class="details" id="demographics"></div>
+      </section>
+
+      <section class="tabpanel" id="panel-plan" role="tabpanel" aria-labelledby="tab-plan" hidden>
+        <div class="plan-head">
+          <label class="sr-only" for="plan-name">Plan name</label>
+          <input class="plan-name" id="plan-name" value="Untitled plan" autocomplete="off">
+        </div>
+        <div class="plan-actions">
+          <div class="row">
+            <button class="btn plan" id="btn-draw">Draw an area</button>
+            <button class="btn quiet" id="btn-import">Import areas</button>
+          </div>
+          <div class="row">
+            <button class="btn quiet small" id="btn-undo" title="Undo (Ctrl+Z)">↶ Undo</button>
+            <button class="btn quiet small" id="btn-redo" title="Redo (Ctrl+Y)">↷ Redo</button>
+            <button class="btn quiet small" id="btn-save-plan" title="Saves only polygons you added or edited">Save changes</button>
+            <button class="btn quiet small" id="btn-open-plan">Open plan</button>
+            <button class="btn quiet small" id="btn-new-plan">Reset base polygons</button>
+          </div>
+          <label class="inline"><input type="checkbox" id="toggle-all-areas" checked> Show all planning polygons</label>
+          <label class="inline"><input type="checkbox" id="toggle-edge-pan" checked> Move the map when the cursor reaches its edge while drawing</label>
+        </div>
+        <h2 class="section-title">Planning polygon legend</h2>
+        <ul class="area-list" id="area-list"></ul>
+        <div id="plan-empty" class="empty"><strong>No areas yet.</strong> Draw one on the map, or import polygons of interest.</div>
+        <p class="note" style="padding:0 20px">Click a color square to change a polygon's color and transparency. <span class="area-badge new">new</span> and <span class="area-badge edited">edited</span> polygons are the ones <strong>Save changes</strong> writes to the file.</p>
+      </section>
+
+      <section class="tabpanel" id="panel-compare" role="tabpanel" aria-labelledby="tab-compare" hidden>
+        <div id="compare"></div>
+      </section>
+    </div>
+  </aside>
+  <main id="map" aria-label="Map"></main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<input type="file" id="file-generic" hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.20.2/dist/leaflet-geoman.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.2.0/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/shpjs@6.2.0/dist/shp.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@7.1.2/dist/togeojson.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ * Configuration
+ * ------------------------------------------------------------------ */
+const ACCEPT = '.geojson,.json,.zip,.kml,.kmz,.csv';
+const STORE_KEY = 'phillyCommunityPlanner.plan.v4';
+const STYLE_KEY = 'phillyCommunityPlanner.layerStyles.v1';
+const SQM_PER_SQMI = 2589988.11;
+const BASE_PLAN_URL = 'data/Polygons_of_interest.geojson';
+const TRACT_CSV_URL = 'data/philly_tracts_acs2024.csv';
+const BUILDING_WEIGHTS_URL = 'data/building_weights_web.csv';
+const OUTREACH_ZIP_URL = 'data/outreach_by_zip.csv';
+const CITY_GIS = 'https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services';
+const AREA_COLORS = ['#7B2CBF','#0072B2','#D55E00','#009E73','#E69F00','#CC79A7','#56B4E9','#8C564B','#4C78A8','#E45756','#59A14F','#B279A2'];
+const TEMPLE_PRIORITY_ZIPS = new Set(['19121', '19122', '19123', '19125', '19130', '19132', '19133', '19140']);
+// Names in the base polygon file that should display differently.
+const NAME_FIXES = { 'Line 1': 'CHOICE Neighborhood - North Central' };
+
+const C = {
+  plan: '#6B2C91', harbor: '#1F6F78', cherry: '#9D2235', police: '#27407A',
+  amber: '#C98A1B', city: '#4E5968', council: '#6F7A8A', ward: '#5B4B8A', division: '#8A7FA8', zip: '#2F6F5E', heat: '#B42318',
+};
+
+const ordinal = n => { n = Number(n); const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+const divisionLabel = v => { const s = String(v ?? '').padStart(4, '0'); return `Ward ${Number(s.slice(0, 2))}, Division ${Number(s.slice(2))}`; };
+
+// Static project layers (GitHub Pages serves these from ./data/).
+//   live:     City ArcGIS service used when the local file is missing
+//   labelFmt: text for hover tips and map labels
+//   zoomLabels: zoom level at which permanent labels appear
+//   style:    default symbology (Style button changes it; saved in plans)
+const SLOTS = [
+  { key: 'city', title: 'Philadelphia City Limits', kind: 'area', url: 'data/City_Limits.geojson', visible: true, analyzeOnClick: true,
+    style: { color: C.city, fillOpacity: 0, lineOpacity: 0.9, weight: 2 }, help: 'Official city boundary and default map extent.' },
+  { key: 'council', title: 'Council Districts 2024', kind: 'area', url: 'data/Council_Districts_2024.geojson', visible: true, analyzeOnClick: true,
+    style: { color: C.council, fillOpacity: 0.035, lineOpacity: 0.9, weight: 1.4 }, help: 'Click a district to calculate its demographics.' },
+  { key: 'policeDistricts', title: 'Police Districts', kind: 'area', url: 'data/police_districts.geojson', live: 'Boundaries_District', optional: true,
+    visible: true, analyzeOnClick: true, labelField: 'dist_numc', labelFmt: v => `${ordinal(v)} District`, zoomLabels: 12,
+    style: { color: C.police, fillOpacity: 0, lineOpacity: 0.85, weight: 1.8, dashArray: '6 4' }, help: 'Philadelphia Police Department district boundaries.' },
+  { key: 'wards', title: 'Political Wards', kind: 'area', url: 'data/political_wards.geojson', live: 'Political_Wards', optional: true,
+    visible: false, analyzeOnClick: true, labelField: 'ward_num', labelFmt: v => `Ward ${Number(v)}`, zoomLabels: 13,
+    style: { color: C.ward, fillOpacity: 0, lineOpacity: 0.85, weight: 1.6 }, help: 'The 66 voting wards.' },
+  { key: 'divisions', title: 'Voting Divisions', kind: 'area', url: 'data/political_divisions.geojson', live: 'Political_Divisions', optional: true,
+    visible: false, analyzeOnClick: true, labelField: 'division_num', labelFmt: divisionLabel, zoomLabels: 16,
+    style: { color: C.division, fillOpacity: 0, lineOpacity: 0.7, weight: 0.8 }, help: 'Voting divisions (polling precincts) inside each ward.' },
+  { key: 'zips', title: 'ZIP Codes', kind: 'area', url: 'data/zip_codes.geojson', live: 'Zipcodes_Poly', optional: true,
+    visible: false, analyzeOnClick: true, labelField: 'code', labelFmt: v => `${v}`, zoomLabels: 12,
+    style: { color: C.zip, fillOpacity: 0, lineOpacity: 0.8, weight: 1.4 }, help: 'All Philadelphia ZIP codes.' },
+  { key: 'priorityZips', title: 'Temple Priority ZIP Codes', kind: 'area', url: 'data/zip_codes.geojson', live: 'Zipcodes_Poly', optional: true,
+    filter: f => TEMPLE_PRIORITY_ZIPS.has(String((f.properties || {}).code)),
+    visible: true, analyzeOnClick: true, labelField: 'code', labelFmt: v => `${v}`, zoomLabels: 11,
+    style: { color: C.cherry, fillOpacity: 0.06, lineOpacity: 0.95, weight: 2.4 }, help: '19121, 19122, 19123, 19125, 19130, 19132, 19133 and 19140.' },
+  { key: 'police', title: 'TU Police Boundary', kind: 'area', url: 'data/TU_police_boundary.geojson', visible: true, analyzeOnClick: true,
+    style: { color: C.police, fillOpacity: 0.035, lineOpacity: 0.95, weight: 2.2, dashArray: '7 5' }, help: 'Temple University police patrol boundary.' },
+  { key: 'tuBuildings', title: 'TU Buildings', kind: 'area', url: 'data/TU_buildings.geojson', visible: true,
+    style: { color: C.cherry, fillOpacity: 0.24, lineOpacity: 1, weight: 0.7 }, help: 'Temple University building footprints.' },
+  { key: 'tuStations', title: 'TU Police Stations', kind: 'point', url: 'data/TU_Police_Stations.geojson', visible: true,
+    style: { color: C.cherry, fillOpacity: 1, radius: 6.5 }, help: 'Temple police/security locations.' },
+  { key: 'policeStations', title: 'Philadelphia Police Stations', kind: 'point', url: 'data/Police_Stations.geojson', visible: true,
+    style: { color: C.police, fillOpacity: 1, radius: 6.5 }, help: 'Hover for the district; click for the address.' },
+  { key: 'schools', title: 'Schools of Interest', kind: 'point', url: 'data/Schools_of_Interest.geojson', visible: true,
+    style: { color: C.amber, fillOpacity: 1, radius: 5 }, help: 'Schools used as planning reference points.' },
+  { key: 'outreach', title: 'Outreach Members (heat map)', kind: 'heat', url: 'data/outreach_heat.csv', optional: true, visible: true,
+    style: { color: C.heat, fillOpacity: 0.8, radius: 24 }, help: 'Where program members live, grouped into ~250 m cells. Cells with fewer than 3 members are hidden for privacy.' },
+];
+
+// ACS count fields and the building weight used to split them inside a polygon.
+//   pop: people   hhpop: household population   occ: households   own/rnt: owner/renter households
+const WEIGHT_CLASS = {
+  hh_pop: 'hhpop',
+  hh_occ: 'occ', veh_hh: 'occ', no_vehicle: 'occ', inet_univ: 'occ',
+  owner_occ: 'own', renter_occ: 'rnt',
+};
+const classOf = field => WEIGHT_CLASS[field] || 'pop';
+const WEIGHT_KEYS = ['hhpop', 'pop', 'occ', 'own', 'rnt'];
+
+const COUNT_FIELDS = [
+  'pop_total', 'hh_pop', 'hh_occ', 'owner_occ', 'renter_occ', 'pov_univ', 'pov_below',
+  'race_total', 'white_nh', 'black_nh', 'asian_nh', 'hispanic',
+  'workers', 'drv_alone', 'pub_trans', 'bicycle', 'walked', 'wfh',
+  'veh_hh', 'no_vehicle', 'sch_univ', 'k12_enr', 'pop25plus', 'hs_grad',
+  'bachelors', 'masters', 'prof_deg', 'doctorate', 'labor_frc', 'employed', 'unemployed',
+  'hins_univ', 'dis_univ', 'lang_univ', 'inet_univ', 'under18', 'age65plus',
+];
+const MEDIAN_FIELDS = { med_hh_inc: 'hh_occ', med_rent: 'renter_occ', med_value: 'owner_occ' };
+
+const METRICS = [
+  { id: 'pop', prop: 'pop', group: 'People', label: 'Modeled household population', type: 'count', num: ['hh_pop'] },
+  { id: 'under18', prop: 'pct_u18', group: 'People', label: 'Under 18', type: 'pct', num: ['under18'], den: ['pop_total'] },
+  { id: 'age65', prop: 'pct_65up', group: 'People', label: '65 and over', type: 'pct', num: ['age65plus'], den: ['pop_total'] },
+  { id: 'k12', prop: 'k12_enr', group: 'People', label: 'K–12 students', type: 'count', num: ['k12_enr'] },
+  { id: 'black', prop: 'pct_blk_nh', group: 'Race and ethnicity', label: 'Black, non-Hispanic', type: 'pct', num: ['black_nh'], den: ['race_total'] },
+  { id: 'white', prop: 'pct_wht_nh', group: 'Race and ethnicity', label: 'White, non-Hispanic', type: 'pct', num: ['white_nh'], den: ['race_total'] },
+  { id: 'hisp', prop: 'pct_hisp', group: 'Race and ethnicity', label: 'Hispanic or Latino', type: 'pct', num: ['hispanic'], den: ['race_total'] },
+  { id: 'asian', prop: 'pct_asn_nh', group: 'Race and ethnicity', label: 'Asian, non-Hispanic', type: 'pct', num: ['asian_nh'], den: ['race_total'] },
+  { id: 'income', prop: 'med_income', group: 'Income and housing', label: 'Median household income', type: 'money', num: ['med_hh_inc'] },
+  { id: 'poverty', prop: 'pct_pov', group: 'Income and housing', label: 'Below poverty level', type: 'pct', num: ['pov_below'], den: ['pov_univ'] },
+  { id: 'hh', prop: 'households', group: 'Income and housing', label: 'Households', type: 'count', num: ['hh_occ'] },
+  { id: 'renter', prop: 'pct_renter', group: 'Income and housing', label: 'Renter households', type: 'pct', num: ['renter_occ'], den: ['hh_occ'] },
+  { id: 'rent', prop: 'med_rent', group: 'Income and housing', label: 'Median gross rent', type: 'money', num: ['med_rent'] },
+  { id: 'value', prop: 'med_value', group: 'Income and housing', label: 'Median home value', type: 'money', num: ['med_value'] },
+  { id: 'nocar', prop: 'pct_no_car', group: 'Getting around', label: 'Households without a car', type: 'pct', num: ['no_vehicle'], den: ['veh_hh'] },
+  { id: 'transit', prop: 'pct_transit', group: 'Getting around', label: 'Commute by transit', type: 'pct', num: ['pub_trans'], den: ['workers'] },
+  { id: 'walk', prop: 'pct_walk', group: 'Getting around', label: 'Commute on foot', type: 'pct', num: ['walked'], den: ['workers'] },
+  { id: 'bike', prop: 'pct_bike', group: 'Getting around', label: 'Commute by bike', type: 'pct', num: ['bicycle'], den: ['workers'] },
+  { id: 'drive', prop: 'pct_drive', group: 'Getting around', label: 'Drive alone to work', type: 'pct', num: ['drv_alone'], den: ['workers'] },
+  { id: 'wfh', prop: 'pct_wfh', group: 'Getting around', label: 'Work from home', type: 'pct', num: ['wfh'], den: ['workers'] },
+  { id: 'ba', prop: 'pct_ba_up', group: 'Education and work', label: 'Bachelor’s degree or higher', type: 'pct', num: ['bachelors', 'masters', 'prof_deg', 'doctorate'], den: ['pop25plus'] },
+  { id: 'hs', prop: 'pct_hs_only', group: 'Education and work', label: 'High school diploma as highest level', type: 'pct', num: ['hs_grad'], den: ['pop25plus'] },
+  { id: 'unemp', prop: 'pct_unemp', group: 'Education and work', label: 'Unemployment rate', type: 'pct', num: ['unemployed'], den: ['employed', 'unemployed'] },
+];
+
+proj4.defs('EPSG:2272', '+proj=lcc +lat_1=40.96666666666667 +lat_2=39.93333333333333 +lat_0=39.33333333333334 +lon_0=-77.75 +x_0=600000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=us-ft +no_defs');
+proj4.defs('EPSG:32129', '+proj=lcc +lat_1=40.96666666666667 +lat_2=39.93333333333333 +lat_0=39.33333333333334 +lon_0=-77.75 +x_0=600000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs');
+const CRS_NAMES = { 2272: 'PA State Plane South (feet)', 32129: 'PA State Plane South (meters)', 3857: 'Web Mercator' };
+
+/* ------------------------------------------------------------------ *
+ * Small helpers
+ * ------------------------------------------------------------------ */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const toNum = v => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  if (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v.replace(/,/g, '')))) return Number(v.replace(/,/g, ''));
+  return NaN;
+};
+const inBbox = (p, b) => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
+const isPoly = g => g && (g.type === 'Polygon' || g.type === 'MultiPolygon');
+const feature = geometry => ({ type: 'Feature', properties: {}, geometry });
+const slug = s => (s || 'plan').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'plan';
+const today = () => new Date().toISOString().slice(0, 10);
+const clone = o => JSON.parse(JSON.stringify(o));
+const clamp01 = v => Math.max(0, Math.min(1, v));
+
+function toast(msg, kind = 'info', ms = 5200) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind === 'error' ? ' error' : '');
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => el.remove(), kind === 'error' ? ms + 3000 : ms);
+}
+
+function download(name, text, type = 'application/geo+json') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function pickFile(accept = ACCEPT) {
+  return new Promise(resolve => {
+    const input = $('#file-generic');
+    input.accept = accept; input.value = '';
+    input.onchange = () => resolve(input.files[0] || null);
+    input.click();
+  });
+}
+
+/* colors */
+function hexToRgb(hex) {
+  const m = String(hex || '').trim().match(/^#?([0-9a-f]{6}|[0-9a-f]{3})$/i);
+  if (!m) return null;
+  let h = m[1]; if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+}
+const rgbToHex = rgb => '#' + rgb.map(v => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase();
+function hsvToHex(h, s, v) {
+  const f = n => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+  return rgbToHex([f(5), f(3), f(1)].map(x => x * 255));
+}
+function hexToHsv(hex) {
+  const rgb = hexToRgb(hex) || [107, 44, 145];
+  const [r, g, b] = rgb.map(x => x / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d) h = max === r ? 60 * (((g - b) / d) % 6) : max === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4);
+  return { h: (h + 360) % 360, s: max ? d / max : 0, v: max };
+}
+function inkFor(hex) {
+  const rgb = hexToRgb(hex); if (!rgb) return '#fff';
+  const [r, g, b] = rgb.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.45 ? '#1C2433' : '#FFFFFF';
+}
+const rgba = (hex, a) => { const c = hexToRgb(hex) || [0, 0, 0]; return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
+
+/* ------------------------------------------------------------------ *
+ * Reading files into WGS84 GeoJSON
+ * ------------------------------------------------------------------ */
+function mapCoords(geom, fn) {
+  const walk = c => (typeof c[0] === 'number' ? fn(c) : c.map(walk));
+  return { type: geom.type, coordinates: walk(geom.coordinates) };
+}
+function firstCoord(geom) {
+  let c = geom.coordinates;
+  while (Array.isArray(c) && typeof c[0] !== 'number') c = c[0];
+  return Array.isArray(c) ? c : null;
+}
+
+function sourceCRS(fc) {
+  const named = fc.crs && fc.crs.properties && fc.crs.properties.name;
+  if (named && !/CRS84/i.test(named)) {
+    const m = String(named).match(/(\d{4,6})\D*$/);
+    const code = m && Number(m[1]);
+    if ([4326, 4269, 4258, 4152].includes(code)) return null;
+    if (CRS_NAMES[code]) return code;
+    if (code) throw new Error(`This file uses EPSG:${code}, which the planner can't convert. Export it as WGS84 (EPSG:4326) and try again.`);
+  }
+  const sample = fc.features.slice(0, 25).map(f => firstCoord(f.geometry)).find(Boolean);
+  if (!sample) return null;
+  const [x, y] = sample;
+  if (Math.abs(x) <= 180 && Math.abs(y) <= 90) return null;
+  if (x < -1e6 && y > 1e6) return 3857;
+  if (x > 1.5e6 && x < 4e6) return 2272;
+  if (x > 2e5 && x <= 1.5e6) return 32129;
+  throw new Error('The coordinates in this file are in a projection the planner doesn’t recognize. Export it as WGS84 (EPSG:4326) and try again.');
+}
+
+function normalizeFC(fc) {
+  const out = [];
+  for (const f of fc.features || []) {
+    if (!f || !f.geometry) continue;
+    const props = f.properties || {};
+    const geoms = f.geometry.type === 'GeometryCollection' ? f.geometry.geometries : [f.geometry];
+    for (const g of geoms) {
+      if (!g || !g.coordinates || !['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'].includes(g.type)) continue;
+      out.push({ type: 'Feature', properties: props, geometry: mapCoords(g, c => [Number(c[0]), Number(c[1])]) });
+    }
+  }
+  const result = { type: 'FeatureCollection', features: out };
+  const code = sourceCRS({ crs: fc.crs, features: out });
+  if (code) {
+    const from = code === 3857 ? 'EPSG:3857' : `EPSG:${code}`;
+    for (const f of out) f.geometry = mapCoords(f.geometry, c => proj4(from, 'EPSG:4326', c));
+    result.reprojectedFrom = code;
+  }
+  result.features = result.features.filter(f => { const c = firstCoord(f.geometry); return c && Number.isFinite(c[0]) && Number.isFinite(c[1]); });
+  return result;
+}
+
+function parseWKT(text) {
+  if (typeof text !== 'string') return null;
+  const s = text.trim().replace(/^SRID=\d+;/i, '');
+  const m = s.match(/^(MULTIPOLYGON|POLYGON|MULTILINESTRING|LINESTRING|MULTIPOINT|POINT)\s*(?:ZM|Z|M)?\s*(\(.*\))\s*$/is);
+  if (!m) return null;
+  const num = '-?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?';
+  const body = m[2].replace(new RegExp(`${num}(?:\\s+${num})+`, 'g'), t => '[' + t.trim().split(/\s+/).join(',') + ']').replace(/\(/g, '[').replace(/\)/g, ']');
+  let coords;
+  try { coords = JSON.parse(body); } catch { return null; }
+  const type = { POINT: 'Point', MULTIPOINT: 'MultiPoint', LINESTRING: 'LineString', MULTILINESTRING: 'MultiLineString', POLYGON: 'Polygon', MULTIPOLYGON: 'MultiPolygon' }[m[1].toUpperCase()];
+  if (type === 'Point') coords = coords[0];
+  if (type === 'MultiPoint') coords = coords.map(c => (Array.isArray(c[0]) ? c[0] : c));
+  return { type, coordinates: coords };
+}
+
+function csvToFC(text) {
+  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+  const fields = parsed.meta.fields || [];
+  const rows = parsed.data;
+  if (!rows.length) throw new Error('This CSV has no rows.');
+  const wktCol = fields.find(f => /^(wkt|geometry|the_geom|shape|geom)$/i.test(f) && parseWKT(rows[0][f])) || fields.find(f => parseWKT(rows[0][f]));
+  const features = [];
+  if (wktCol) {
+    for (const r of rows) { const g = parseWKT(r[wktCol]); if (!g) continue; const props = { ...r }; delete props[wktCol]; features.push({ type: 'Feature', properties: props, geometry: g }); }
+  } else {
+    const lat = fields.find(f => /^(lat|latitude|y|point_y|ycoord|y_coord)$/i.test(f));
+    const lon = fields.find(f => /^(lon|lng|long|longitude|x|point_x|xcoord|x_coord)$/i.test(f));
+    if (!lat || !lon) throw new Error('This CSV needs latitude and longitude columns (or X and Y), or a WKT geometry column.');
+    for (const r of rows) {
+      const x = toNum(r[lon]), y = toNum(r[lat]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const props = { ...r }; delete props[lat]; delete props[lon];
+      features.push({ type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [x, y] } });
+    }
+  }
+  if (!features.length) throw new Error('No rows in this CSV had usable coordinates or geometry.');
+  return { type: 'FeatureCollection', features };
+}
+
+function kmlToFC(text) {
+  const dom = new DOMParser().parseFromString(text, 'text/xml');
+  if (dom.getElementsByTagName('parsererror').length) throw new Error('This KML file couldn’t be read.');
+  return toGeoJSON.kml(dom);
+}
+
+function toFC(obj) {
+  if (Array.isArray(obj)) return { type: 'FeatureCollection', features: obj.filter(f => f && f.type === 'Feature') };
+  if (obj.type === 'FeatureCollection') return obj;
+  if (obj.type === 'Feature') return { type: 'FeatureCollection', features: [obj] };
+  if (obj.type && obj.coordinates) return { type: 'FeatureCollection', features: [feature(obj)] };
+  if (obj.type === 'GeometryCollection') return { type: 'FeatureCollection', features: [feature(obj)] };
+  throw new Error('This JSON file isn’t GeoJSON. In ArcGIS Pro, use Features To JSON with "Output to GeoJSON" and "Project to WGS_1984" checked.');
+}
+
+async function readGeoFile(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  let raw = null, fc;
+  if (ext === 'zip') {
+    const out = await shp(await file.arrayBuffer());
+    const list = Array.isArray(out) ? out : [out];
+    fc = { type: 'FeatureCollection', features: list.flatMap(x => x.features || []) };
+  } else if (ext === 'kmz') {
+    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const kml = Object.values(zip.files).find(f => /\.kml$/i.test(f.name));
+    if (!kml) throw new Error('There’s no .kml file inside this KMZ.');
+    fc = kmlToFC(await kml.async('string'));
+  } else if (ext === 'kml') {
+    fc = kmlToFC(await file.text());
+  } else if (ext === 'csv' || ext === 'txt') {
+    fc = csvToFC(await file.text());
+  } else if (ext === 'geojson' || ext === 'json') {
+    try { raw = JSON.parse(await file.text()); } catch { throw new Error(`${file.name} isn’t valid JSON.`); }
+    fc = toFC(raw);
+  } else {
+    throw new Error(`The planner can’t read .${ext} files. Use GeoJSON, a zipped shapefile, KML or KMZ, or CSV.`);
+  }
+  const norm = normalizeFC(fc);
+  if (!norm.features.length) throw new Error(`${file.name} has no features the planner can map.`);
+  return { fc: norm, meta: raw && raw.planner ? raw.planner : null };
+}
+
+/* ------------------------------------------------------------------ *
+ * Map
+ * ------------------------------------------------------------------ */
+// Dragging a vertex near the map edge pans the map (Leaflet's built-in marker autopan;
+// Geoman's vertex handles are ordinary draggable markers).
+L.Marker.mergeOptions({ autoPan: true, autoPanPadding: L.point(48, 48), autoPanSpeed: 12 });
+
+const map = L.map('map', { zoomControl: true }).setView([39.9812, -75.1553], 13);
+const basemaps = {
+  'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }),
+  'Esri topographic': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' }),
+  'Aerial': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }),
+};
+basemaps['OpenStreetMap'].addTo(map);
+L.control.layers(basemaps, null, { position: 'topright' }).addTo(map);
+L.control.scale({ imperial: true, metric: false }).addTo(map);
+
+[['refPane', 350], ['heatPane', 356], ['policePane', 380], ['comparePane', 390], ['labelsPane', 440], ['pointsPane', 450]]
+  .forEach(([name, z]) => { const p = map.createPane(name); p.style.zIndex = z; if (name === 'heatPane' || name === 'labelsPane') p.style.pointerEvents = 'none'; });
+// All reference polygons share ONE canvas. Separate canvases in stacked panes would each
+// cover the whole map and swallow hover/click events meant for the layers underneath.
+const refRenderer = L.canvas({ pane: 'refPane', padding: 0.3, tolerance: 3 });
+
+map.pm.addControls({ position: 'topleft', drawMarker: false, drawCircleMarker: false, drawPolyline: false, drawCircle: false, drawText: false, rotateMode: false });
+map.pm.setGlobalOptions({ pathOptions: { color: C.plan, weight: 2.5, fillColor: C.plan, fillOpacity: 0.14 } });
+const pmBusy = () => map.pm.globalDrawModeEnabled() || map.pm.globalEditModeEnabled() || map.pm.globalDragModeEnabled()
+  || map.pm.globalRemovalModeEnabled() || map.pm.globalCutModeEnabled();
+
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = () => { const d = L.DomUtil.create('div', 'map-legend'); d.hidden = true; return d; };
+legend.addTo(map);
+
+/* undo / redo buttons on the map */
+const HistoryControl = L.Control.extend({
+  options: { position: 'topleft' },
+  onAdd() {
+    const box = L.DomUtil.create('div', 'leaflet-bar history-ctl');
+    box.innerHTML = '<a href="#" role="button" data-h="undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</a><a href="#" role="button" data-h="redo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</a>';
+    L.DomEvent.disableClickPropagation(box);
+    box.addEventListener('click', e => { const a = e.target.closest('[data-h]'); if (!a) return; e.preventDefault(); a.dataset.h === 'undo' ? undo() : redo(); });
+    return box;
+  },
+});
+new HistoryControl().addTo(map);
+
+/* ------------------------------------------------------------------ *
+ * State
+ * ------------------------------------------------------------------ */
+const state = {
+  layers: {},
+  layerStyles: {},
+  plan: { name: 'Untitled plan', areas: [], removedBase: new Set() },
+  baseAreas: [],       // pristine copies of the base polygons
+  compare: null,
+  selected: null,
+  analysisSelection: { type: 'whole' },
+  demographic: { ready: false, error: '' },
+  dataRev: 0,
+  tractFields: { counts: [], medians: [] },
+  outreachByZip: new Map(),
+};
+let nextId = 1, revCounter = 1;
+const statsCache = new Map();
+
+try { state.layerStyles = JSON.parse(localStorage.getItem(STYLE_KEY) || '{}') || {}; } catch { state.layerStyles = {}; }
+const saveLayerStyles = () => { try { localStorage.setItem(STYLE_KEY, JSON.stringify(state.layerStyles)); } catch { /* ignore */ } };
+const styleOf = slot => ({ ...slot.style, ...(state.layerStyles[slot.key] || {}) });
+
+/* ------------------------------------------------------------------ *
+ * Undo / redo
+ * ------------------------------------------------------------------ */
+const history = { past: [], future: [], current: null, limit: 150 };
+function snapshot() {
+  return JSON.stringify({
+    name: state.plan.name,
+    removedBase: [...state.plan.removedBase],
+    areas: state.plan.areas.map(a => ({ id: a.id, name: a.name, geometry: a.geometry, color: a.color, fillOpacity: a.fillOpacity,
+      lineOpacity: a.lineOpacity, origin: a.origin, baseKey: a.baseKey, dirty: a.dirty })),
+  });
+}
+function commit() {
+  const s = snapshot();
+  if (s === history.current) return;
+  if (history.current !== null) history.past.push(history.current);
+  if (history.past.length > history.limit) history.past.shift();
+  history.current = s; history.future = [];
+  updateHistoryButtons(); autosave();
+}
+function resetHistory() { history.past = []; history.future = []; history.current = snapshot(); updateHistoryButtons(); }
+function restore(s) {
+  const snap = JSON.parse(s);
+  const vis = new Map(state.plan.areas.map(a => [a.id, a.visible]));
+  for (const a of state.plan.areas) if (a.layer && map.hasLayer(a.layer)) map.removeLayer(a.layer);
+  state.plan.name = snap.name; $('#plan-name').value = snap.name;
+  state.plan.removedBase = new Set(snap.removedBase || []);
+  state.plan.areas = snap.areas.map(x => ({ ...x, rev: revCounter++, layer: null, visible: vis.has(x.id) ? vis.get(x.id) : true }));
+  nextId = Math.max(nextId, ...state.plan.areas.map(a => a.id + 1));
+  state.plan.areas.forEach(drawArea);
+  if (!state.plan.areas.some(a => a.id === state.selected)) { state.selected = null; state.analysisSelection = { type: 'whole' }; }
+  history.current = s;
+  listIds = '';
+  updateHistoryButtons(); scheduleUpdate(); autosave();
+}
+function undo() {
+  if (map.pm.globalDrawModeEnabled()) { removeLastVertex(); return; }
+  if (!history.past.length) return toast('Nothing to undo.');
+  history.future.push(history.current);
+  restore(history.past.pop());
+}
+function redo() {
+  if (!history.future.length) return toast('Nothing to redo.');
+  history.past.push(history.current);
+  restore(history.future.pop());
+}
+function removeLastVertex() {
+  const d = map.pm.Draw && (map.pm.Draw.Polygon || map.pm.Draw.Rectangle);
+  if (d && typeof d._removeLastVertex === 'function') d._removeLastVertex();
+}
+function updateHistoryButtons() {
+  const u = history.past.length > 0, r = history.future.length > 0;
+  $('#btn-undo').disabled = !u; $('#btn-redo').disabled = !r;
+  $$('.history-ctl [data-h]').forEach(a => a.classList.toggle('disabled', a.dataset.h === 'undo' ? !u : !r));
+}
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;   // let text fields undo their own typing
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+});
+
+/* ------------------------------------------------------------------ *
+ * Move the map when the cursor reaches its edge while drawing
+ * ------------------------------------------------------------------ */
+const edgePan = { raf: 0, vx: 0, vy: 0, pt: null, orig: null, enabled: true };
+const EDGE_PX = 44, EDGE_MAX_SPEED = 14;
+function edgeStep() {
+  if (!edgePan.enabled || !(edgePan.vx || edgePan.vy) || !(map.pm.globalDrawModeEnabled() || map.pm.globalCutModeEnabled())) { edgePan.raf = 0; return; }
+  map.panBy([edgePan.vx, edgePan.vy], { animate: false });
+  // tell Geoman where the cursor now is on the moved map so the rubber-band line follows
+  const cp = L.point(edgePan.pt.x, edgePan.pt.y);
+  map.fire('mousemove', { latlng: map.containerPointToLatLng(cp), layerPoint: map.containerPointToLayerPoint(cp), containerPoint: cp, originalEvent: edgePan.orig });
+  edgePan.raf = requestAnimationFrame(edgeStep);
+}
+map.getContainer().addEventListener('mousemove', e => {
+  const r = map.getContainer().getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const speed = d => Math.min(EDGE_MAX_SPEED, Math.max(2, (d / EDGE_PX) * EDGE_MAX_SPEED));
+  edgePan.vx = x < EDGE_PX ? -speed(EDGE_PX - x) : x > r.width - EDGE_PX ? speed(x - (r.width - EDGE_PX)) : 0;
+  edgePan.vy = y < EDGE_PX ? -speed(EDGE_PX - y) : y > r.height - EDGE_PX ? speed(y - (r.height - EDGE_PX)) : 0;
+  // ignore the corners occupied by map controls
+  const overControl = e.target && e.target.closest && e.target.closest('.leaflet-control');
+  if (overControl) edgePan.vx = edgePan.vy = 0;
+  edgePan.pt = { x, y }; edgePan.orig = e;
+  if ((edgePan.vx || edgePan.vy) && !edgePan.raf) edgePan.raf = requestAnimationFrame(edgeStep);
+});
+map.getContainer().addEventListener('mouseleave', () => { edgePan.vx = edgePan.vy = 0; });
+
+/* ------------------------------------------------------------------ *
+ * Reference layers
+ * ------------------------------------------------------------------ */
+function guessLabelField(fc, key) {
+  const props = fc.features[0] ? Object.keys(fc.features[0].properties || {}) : [];
+  const prefs = {
+    city: [/^name$/i, /city/i], council: [/district/i, /^name$/i, /dist/i], police: [/^name$/i, /boundary/i, /district/i],
+    tuBuildings: [/^name$/i, /^bldg/i, /^building/i, /^address/i], tuStations: [/^location$/i, /^name$/i, /station/i],
+    policeStations: [/^dist_num$/i, /^location$/i], schools: [/school_?name/i, /^name$/i, /^facil/i, /school/i],
+  }[key] || [/^name$/i];
+  for (const re of prefs) { const hit = props.find(p => re.test(p)); if (hit) return hit; }
+  return props.find(p => fc.features.some(f => typeof (f.properties || {})[p] === 'string')) || '';
+}
+function labelOf(slot, f, field) {
+  const v = field ? (f.properties || {})[field] : '';
+  if (v === undefined || v === null || v === '') return '';
+  return slot && slot.labelFmt ? slot.labelFmt(v) : String(v);
+}
+
+function slotPathStyle(slot) {
+  const s = styleOf(slot);
+  return { color: s.color, weight: s.weight ?? 1.5, opacity: s.lineOpacity ?? 1, fillColor: s.color, fillOpacity: s.fillOpacity ?? 0, dashArray: s.dashArray || null };
+}
+function pointStyle(slot) {
+  const s = styleOf(slot);
+  return { pane: 'pointsPane', radius: s.radius ?? 5, color: '#fff', weight: 1.5, opacity: s.fillOpacity ?? 1, fillColor: s.color, fillOpacity: s.fillOpacity ?? 1 };
+}
+function slotPane(slot) {
+  if (slot.key === 'police') return { pane: 'policePane' };
+  return { pane: 'refPane', renderer: refRenderer };
+}
+// Keep the shared canvas stacked in SLOTS order (later = on top = gets the click).
+function reorderRefLayers() {
+  for (const s of SLOTS) {
+    const e = state.layers[s.key];
+    if (s.kind === 'area' && e && e.visible && e.leaflet && map.hasLayer(e.leaflet) && s.key !== 'police') e.leaflet.bringToFront();
+  }
+}
+
+function tipFor(slot, f) {
+  const entry = state.layers[slot.key];
+  const p = f.properties || {};
+  if (slot.key === 'policeStations') return `<strong>${esc(ordinal(p.dist_num))} Police District</strong>`;
+  let label = labelOf(slot, f, entry && entry.labelField) || slot.title.replace(/s$/, '');
+  if (slot.key === 'zips' || slot.key === 'priorityZips') {
+    const code = String(p.code ?? '');
+    label = `ZIP ${code}${TEMPLE_PRIORITY_ZIPS.has(code) ? ' · Temple priority' : ''}`;
+    const n = state.outreachByZip.get(code);
+    if (n) label += `<br><span style="color:#505B6E">${n.toLocaleString()} outreach member${n === 1 ? '' : 's'}</span>`;
+    return label;
+  }
+  return esc(label);
+}
+
+function stationPopup(f) {
+  const p = f.properties || {};
+  const phone = p.phone__ ? String(p.phone__).replace(/^(\d{3}-\d{4})$/, '215-$1') : '';
+  return `<strong>${esc(ordinal(p.dist_num))} Police District</strong><br>${esc(p.location || '')}, Philadelphia, PA${phone ? `<br>Phone: <a href="tel:${esc(phone)}">${esc(phone)}</a>` : ''}`;
+}
+
+function buildLeaflet(slot, entry) {
+  const pane = slotPane(slot);
+  return L.geoJSON(entry.fc, {
+    pmIgnore: true, snapIgnore: true,
+    pane: pane.pane, renderer: pane.renderer,
+    // pane/renderer go on the GeoJSON options (used for polygons); points pick their own pane
+    style: f => (f.geometry && /Point/.test(f.geometry.type) ? pointStyle(slot) : slotPathStyle(slot)),
+    pointToLayer: (f, ll) => L.circleMarker(ll, { ...pointStyle(slot), pmIgnore: true, snapIgnore: true }),
+    onEachFeature: (f, l) => {
+      l.bindTooltip(() => tipFor(slot, f), { sticky: slot.kind !== 'point', direction: 'top', className: 'ref-tip' });
+      if (slot.key === 'policeStations') l.bindPopup(() => stationPopup(f));
+      if (slot.analyzeOnClick && isPoly(f.geometry)) {
+        l.on('click', () => {
+          if (pmBusy()) return;   // never interrupt drawing or editing
+          const name = labelOf(slot, f, entry.labelField) || slot.title.replace(/s$/, '');
+          const isZip = slot.key === 'zips' || slot.key === 'priorityZips';
+          state.analysisSelection = { type: 'reference', name: isZip ? `ZIP ${name}` : name, geometry: f.geometry };
+          renderDemographics(); showTab('demographics');
+        });
+      }
+    },
+  });
+}
+
+function labelPoints(slot, fc, field) {
+  if (!slot.zoomLabels) return [];
+  return fc.features.map(f => {
+    const text = labelOf(slot, f, field);
+    if (!text || !isPoly(f.geometry)) return null;
+    let pt; try { pt = turf.pointOnFeature(f).geometry.coordinates; } catch { return null; }
+    return { ll: L.latLng(pt[1], pt[0]), text };
+  }).filter(Boolean);
+}
+function updateLabels() {
+  const b = map.getBounds().pad(0.1), z = map.getZoom();
+  for (const slot of SLOTS) {
+    const e = state.layers[slot.key];
+    if (!e || !e.labels) continue;
+    e.labels.clearLayers();
+    if (!e.visible || z < slot.zoomLabels) continue;
+    const color = styleOf(slot).color;
+    for (const p of e.labelPts) {
+      if (!b.contains(p.ll)) continue;
+      e.labels.addLayer(L.marker(p.ll, { pane: 'labelsPane', interactive: false, keyboard: false, pmIgnore: true, snapIgnore: true,
+        icon: L.divIcon({ className: 'bnd-label', html: `<span style="--lc:${color}">${esc(p.text)}</span>`, iconSize: [0, 0] }) }));
+    }
+  }
+}
+map.on('zoomend moveend', updateLabels);
+
+function setSlot(key, fc, fileName) {
+  const slot = SLOTS.find(s => s.key === key);
+  const old = state.layers[key];
+  if (old && old.leaflet) map.removeLayer(old.leaflet);
+  if (old && old.labels) map.removeLayer(old.labels);
+  if (slot.filter) fc = { ...fc, features: fc.features.filter(slot.filter) };
+  const entry = { fc, fileName, labelField: slot.labelField || guessLabelField(fc, key), visible: slot.visible !== false };
+  state.layers[key] = entry;
+  entry.leaflet = buildLeaflet(slot, entry);
+  entry.labelPts = labelPoints(slot, fc, entry.labelField);
+  if (entry.labelPts.length) entry.labels = L.layerGroup().addTo(map);
+  if (entry.visible) entry.leaflet.addTo(map);
+  renderSlots(); updateLabels();
+}
+
+function applySlotStyle(key) {
+  const slot = SLOTS.find(s => s.key === key), e = state.layers[key];
+  if (!e) return;
+  if (slot.kind === 'heat') { styleHeat(e, slot); renderLegend(); return; }
+  const s = styleOf(slot);
+  e.leaflet.eachLayer(l => {
+    if (l instanceof L.CircleMarker) { l.setStyle({ fillColor: s.color, fillOpacity: s.fillOpacity, opacity: s.fillOpacity }); l.setRadius(s.radius ?? 5); }
+    else l.setStyle(slotPathStyle(slot));
+  });
+  updateLabels(); renderSlots();
+}
+
+const geoCache = new Map();
+async function fetchJSON(url) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+async function fetchArcgis(service) {
+  const feats = [];
+  for (let offset = 0, i = 0; i < 80; i++) {
+    const url = `${CITY_GIS}/${service}/FeatureServer/0/query?where=1%3D1&outFields=*&outSR=4326&f=geojson&orderByFields=objectid&resultOffset=${offset}&resultRecordCount=1000`;
+    const j = await fetchJSON(url);
+    const batch = j.features || [];
+    feats.push(...batch);
+    offset += batch.length;
+    if (!batch.length || !(j.exceededTransferLimit || (j.properties && j.properties.exceededTransferLimit))) break;
+  }
+  return { type: 'FeatureCollection', features: feats };
+}
+function loadGeo(slot) {
+  const k = slot.url;
+  if (!geoCache.has(k)) {
+    geoCache.set(k, (async () => {
+      try { return { fc: normalizeFC(await fetchJSON(slot.url)), from: slot.url.replace(/^data\//, '') }; }
+      catch (err) {
+        if (!slot.live) throw err;
+        console.info(`${slot.url} not found; loading ${slot.live} from the City of Philadelphia`);
+        return { fc: normalizeFC(await fetchArcgis(slot.live)), from: `City of Philadelphia (${slot.live})` };
+      }
+    })());
+  }
+  return geoCache.get(k);
+}
+
+/* ---------- outreach heat map ---------- */
+async function loadHeat(slot) {
+  const rows = (await fetchCsvRows(slot.url)).map(r => {
+    const o = {}; for (const [k, v] of Object.entries(r)) o[k] = toNum(v);
+    return o;
+  }).filter(r => Number.isFinite(r.lat) && Number.isFinite(r.lon));
+  if (!rows.length) throw new Error('No rows with lat/lon in outreach_heat.csv');
+  const statuses = ['total', 'active', 'disengaged', 'milestone', 'inquiry'].filter(s => rows.some(r => Number.isFinite(r[s])));
+  const entry = { rows, statuses, status: 'total', visible: slot.visible !== false, fileName: slot.url.replace(/^data\//, '') };
+  entry.leaflet = L.heatLayer([], { radius: 24, blur: 20, maxZoom: 15, minOpacity: 0.15 });
+  state.layers[slot.key] = entry;
+  setHeatData(entry);
+  if (entry.visible) entry.leaflet.addTo(map);
+  styleHeat(entry, slot);
+  renderSlots(); renderLegend();
+}
+function setHeatData(e) {
+  const pts = e.rows.map(r => [r.lat, r.lon, r[e.status] || 0]).filter(p => p[2] > 0);
+  const vals = pts.map(p => p[2]).sort((a, b) => a - b);
+  e.max = vals.length ? vals[Math.floor(vals.length * 0.95)] || vals[vals.length - 1] : 1;
+  e.members = vals.reduce((s, v) => s + v, 0);
+  e.leaflet.setOptions({ max: e.max });
+  e.leaflet.setLatLngs(pts);
+}
+function styleHeat(e, slot) {
+  const s = styleOf(slot);
+  e.leaflet.setOptions({ radius: s.radius ?? 24, blur: Math.round((s.radius ?? 24) * 0.85), gradient: { 0.2: rgba(s.color, 0.25), 0.55: rgba(s.color, 0.7), 1: s.color } });
+  const canvas = e.leaflet._canvas;
+  if (canvas) {
+    if (canvas.parentNode !== map.getPane('heatPane')) map.getPane('heatPane').appendChild(canvas);
+    canvas.style.opacity = s.fillOpacity ?? 0.8;
+    canvas.style.pointerEvents = 'none';
+  }
+}
+map.on('layeradd', ev => { const e = state.layers.outreach; if (e && ev.layer === e.leaflet) styleHeat(e, SLOTS.find(s => s.key === 'outreach')); });
+
+function renderLegend() {
+  const el = legend.getContainer();
+  const e = state.layers.outreach, slot = SLOTS.find(s => s.key === 'outreach');
+  if (!e || !e.visible) { el.hidden = true; return; }
+  const c = styleOf(slot).color;
+  const lbl = { total: 'All members', active: 'Active', disengaged: 'Disengaged', milestone: 'Milestone complete', inquiry: 'Inquiry' }[e.status];
+  el.hidden = false;
+  el.innerHTML = `<strong>Outreach members · ${esc(lbl)}</strong><div class="ramp" style="background:linear-gradient(90deg, ${rgba(c, 0.15)}, ${rgba(c, 0.7)}, ${c})"></div><div class="ends"><span>Fewer</span><span>More</span></div>`;
+}
+
+async function loadBaseLayers() {
+  await Promise.all(SLOTS.map(async slot => {
+    try {
+      if (slot.kind === 'heat') { await loadHeat(slot); return; }
+      const { fc, from } = await loadGeo(slot);
+      setSlot(slot.key, fc, from);
+    } catch (err) {
+      console.warn(`Could not load ${slot.url}`, err);
+      if (!slot.optional) toast(`Could not load ${slot.url}. Check that the file is in the docs/data folder.`, 'error', 7000);
+      renderSlots();
+    }
+  }));
+  reorderRefLayers();
+  const city = state.layers.city && state.layers.city.leaflet;
+  if (city && city.getBounds().isValid() && !state.plan.areas.length) map.fitBounds(city.getBounds(), { padding: [18, 18], maxZoom: 12 });
+}
+
+async function loadOutreachZips() {
+  try {
+    const rows = await fetchCsvRows(OUTREACH_ZIP_URL);
+    for (const r of rows) { const n = toNum(r.total); if (r.zip && Number.isFinite(n)) state.outreachByZip.set(String(r.zip).padStart(5, '0'), n); }
+  } catch { /* optional file */ }
+}
+
+/* ------------------------------------------------------------------ *
+ * Demographic model
+ * ------------------------------------------------------------------ */
+const cleanGeoid = v => String(v ?? '').replace(/\.0$/, '').padStart(11, '0');
+const gridSize = 0.02;
+const gridKey = (lon, lat) => `${Math.floor(lon / gridSize)},${Math.floor(lat / gridSize)}`;
+
+async function fetchCsvRows(url) {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
+  const parsed = Papa.parse(await response.text(), { header: true, skipEmptyLines: true, dynamicTyping: false });
+  if (parsed.errors && parsed.errors.length) console.warn(`CSV parse warnings for ${url}`, parsed.errors.slice(0, 5));
+  return parsed.data;
+}
+
+async function loadDemographicSources() {
+  const status = $('#demo-source-status');
+  try {
+    status.className = 'demo-status';
+    status.textContent = 'Loading ACS tract totals and building weights…';
+    const [tractRows, buildingRows] = await Promise.all([fetchCsvRows(TRACT_CSV_URL), fetchCsvRows(BUILDING_WEIGHTS_URL)]);
+
+    const tractMap = new Map();
+    for (const row of tractRows) {
+      const geoid = cleanGeoid(row.TRACT_GEOID ?? row.tract_geoid ?? row.GEOID ?? row.geoid);
+      if (!geoid || geoid === '00000000000') continue;
+      const vals = {};
+      for (const [k, raw] of Object.entries(row)) { const v = toNum(raw); if (Number.isFinite(v) && v >= 0) vals[k] = v; }
+      tractMap.set(geoid, vals);
+    }
+    if (!tractMap.size) throw new Error('No tract rows could be read from philly_tracts_acs2024.csv.');
+
+    const sample = tractRows[0] || {};
+    state.tractFields = {
+      counts: COUNT_FIELDS.filter(k => Object.prototype.hasOwnProperty.call(sample, k)),
+      medians: Object.keys(MEDIAN_FIELDS).filter(k => Object.prototype.hasOwnProperty.call(sample, k)),
+    };
+
+    // New files carry per-building people/household weights; older ones only "capacity".
+    const hasModel = buildingRows.length > 0 && 'hh_pop' in buildingRows[0];
+    const num = v => { const n = toNum(v); return Number.isFinite(n) && n > 0 ? n : 0; };
+    const buildings = [], grid = new Map(), totByTract = new Map();
+    for (const row of buildingRows) {
+      const lon = toNum(row.lon ?? row.longitude), lat = toNum(row.lat ?? row.latitude);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+      const tract = cleanGeoid(row.tract_geoid ?? row.TRACT_GEOID);
+      if (!tractMap.has(tract)) continue;
+      const vacant = num(row.vacant ?? row.vpi_vacant) > 0;
+      let w, units;
+      if (hasModel) {
+        const hh = num(row.hh_pop), gq = num(row.gq_pop);
+        units = num(row.units);
+        w = { hhpop: hh, pop: hh + gq, occ: num(row.occ), own: num(row.own), rnt: num(row.rnt) };
+      } else {
+        units = num(row.capacity);
+        const c = vacant ? 0 : units;          // old file: vacant buildings get nobody
+        w = { hhpop: c, pop: c, occ: c, own: c, rnt: c };
+      }
+      const i = buildings.push({ pt: [lon, lat], tract, units, vacant, w }) - 1;
+      const key = gridKey(lon, lat);
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(i);
+      const t = totByTract.get(tract) || Object.fromEntries(WEIGHT_KEYS.map(k => [k, 0]));
+      for (const k of WEIGHT_KEYS) t[k] += w[k];
+      totByTract.set(tract, t);
+    }
+    if (!buildings.length) throw new Error('No usable building rows were found in building_weights_web.csv.');
+
+    state.demographic = { ready: true, tracts: tractMap, buildings, grid, totByTract, hasModel, error: '' };
+    state.dataRev++; statsCache.clear();
+    status.innerHTML = `<strong>Demographic model ready.</strong> ${tractMap.size.toLocaleString()} tracts and ${buildings.length.toLocaleString()} building locations loaded${hasModel ? '' : ' (older capacity-only building file)'}.`;
+    scheduleUpdate();
+  } catch (err) {
+    console.error(err);
+    state.demographic = { ready: false, error: err.message || String(err) };
+    status.className = 'demo-status error';
+    status.innerHTML = `<strong>Demographics are not active yet.</strong> ${esc(state.demographic.error)}<br><br>Add <code>docs/data/philly_tracts_acs2024.csv</code> and <code>docs/data/building_weights_web.csv</code>.`;
+    scheduleUpdate();
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Analysis
+ * ------------------------------------------------------------------ */
+function cleanAoi(geometry) {
+  let f = feature(geometry);
+  try {
+    if (geometry.type === 'Polygon' && turf.kinks(f).features.length) {
+      const parts = turf.unkinkPolygon(f);
+      const u = parts.features.length > 1 ? turf.union(parts) : parts.features[0];
+      if (u) f = feature(u.geometry);
+    }
+  } catch { /* keep original */ }
+  return f;
+}
+
+function candidateBuildings(bb) {
+  const d = state.demographic, out = [];
+  const x0 = Math.floor(bb[0] / gridSize), x1 = Math.floor(bb[2] / gridSize);
+  const y0 = Math.floor(bb[1] / gridSize), y1 = Math.floor(bb[3] / gridSize);
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+    const ids = d.grid.get(`${x},${y}`);
+    if (ids) for (const i of ids) out.push(d.buildings[i]);
+  }
+  return out;
+}
+
+// Each ACS count is split by the weight that matches what it counts:
+// people by modeled population, households by occupied units, owner/renter
+// households by owner/renter units. Tract totals are always respected.
+function aggregateResidential(aoi) {
+  const d = state.demographic;
+  if (!d.ready) return null;
+  const bb = turf.bbox(aoi);
+  const inside = new Map();
+  let buildingsUsed = 0, residentialUnits = 0, vacantBuildings = 0, people = 0;
+  for (const b of candidateBuildings(bb)) {
+    if (!inBbox(b.pt, bb)) continue;
+    let hit = false;
+    try { hit = turf.booleanPointInPolygon(turf.point(b.pt), aoi); } catch { hit = false; }
+    if (!hit) continue;
+    if (b.vacant) vacantBuildings++;
+    if (b.w.pop <= 0 && b.w.occ <= 0) continue;
+    buildingsUsed++;
+    residentialUnits += b.units;
+    people += b.w.hhpop;
+    const s = inside.get(b.tract) || Object.fromEntries(WEIGHT_KEYS.map(k => [k, 0]));
+    for (const k of WEIGHT_KEYS) s[k] += b.w[k];
+    inside.set(b.tract, s);
+  }
+  const sums = {}, medAcc = {};
+  let tractsUsed = 0;
+  for (const [tract, s] of inside.entries()) {
+    const tot = d.totByTract.get(tract), vals = d.tracts.get(tract);
+    if (!tot || !vals) continue;
+    const share = {};
+    for (const k of WEIGHT_KEYS) share[k] = tot[k] > 0 ? Math.min(1, s[k] / tot[k]) : 0;
+    tractsUsed++;
+    for (const k of state.tractFields.counts) { const v = vals[k]; if (Number.isFinite(v)) sums[k] = (sums[k] || 0) + v * share[classOf(k)]; }
+    for (const k of state.tractFields.medians) {
+      const v = vals[k], wf = MEDIAN_FIELDS[k];
+      if (!Number.isFinite(v) || !Number.isFinite(vals[wf])) continue;
+      const w = vals[wf] * share[classOf(wf)];
+      if (w <= 0) continue;
+      medAcc[k] = medAcc[k] || { s: 0, w: 0 };
+      medAcc[k].s += v * w; medAcc[k].w += w;
+    }
+  }
+  for (const [k, a] of Object.entries(medAcc)) sums[k] = a.w > 0 ? a.s / a.w : NaN;
+  if (d.hasModel && inside.size) sums.hh_pop = people;
+  return { vals: sums, buildingsUsed, residentialUnits, vacantBuildings, tractsUsed };
+}
+
+function analyze(geometry) {
+  const aoi = cleanAoi(geometry);
+  return { sqmi: turf.area(aoi) / SQM_PER_SQMI, demo: aggregateResidential(aoi) };
+}
+function areaStats(area) {
+  const key = `${area.id}|${area.rev}|${state.dataRev}`;
+  if (!statsCache.has(key)) statsCache.set(key, analyze(area.geometry));
+  return statsCache.get(key);
+}
+function unionGeometry(areas) {
+  const polys = areas.map(a => feature(a.geometry)).filter(f => isPoly(f.geometry));
+  if (!polys.length) return null;
+  if (polys.length === 1) return polys[0].geometry;
+  try { const u = turf.union(turf.featureCollection(polys)); return u ? u.geometry : null; } catch { return null; }
+}
+function planStats(which) {
+  const plan = which === 'compare' ? state.compare : state.plan;
+  if (!plan || !plan.areas.length) return null;
+  const key = `${which}|${plan.areas.map(a => `${a.id || a.name}:${a.rev || 0}`).join(',')}|${state.dataRev}`;
+  if (statsCache.has(key)) return statsCache.get(key);
+  const g = unionGeometry(plan.areas);
+  const r = g ? analyze(g) : null;
+  if (r) r.areaCount = plan.areas.length;
+  statsCache.set(key, r);
+  return r;
+}
+
+function metricValue(m, vals) {
+  if (!vals) return null;
+  const sum = fields => { let s = 0; for (const f of fields) { if (!Number.isFinite(vals[f])) return null; s += vals[f]; } return s; };
+  if (m.type === 'count' || m.type === 'money') return sum(m.num);
+  const n = sum(m.num), dd = sum(m.den);
+  return n === null || dd === null || dd <= 0 ? null : (n / dd) * 100;
+}
+const availableMetrics = () => {
+  const have = new Set([...state.tractFields.counts, ...state.tractFields.medians]);
+  return METRICS.filter(m => [...m.num, ...(m.den || [])].every(f => have.has(f)));
+};
+function fmt(m, v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '–';
+  if (!m || m.type === 'count') return Math.round(v).toLocaleString('en-US');
+  if (m.type === 'pct') return v.toFixed(1) + '%';
+  if (m.type === 'money') { const step = v >= 10000 ? 100 : 10; return '$' + (Math.round(v / step) * step).toLocaleString('en-US'); }
+  return String(v);
+}
+function fmtDiff(m, d) {
+  if (d === null || !Number.isFinite(d)) return '–';
+  const sign = d > 0 ? '+' : d < 0 ? '−' : '', a = Math.abs(d);
+  if (m.type === 'pct') return a < 0.05 ? 'same' : `${sign}${a.toFixed(1)} pts`;
+  if (m.type === 'money') { const step = a >= 10000 ? 100 : 10; return Math.round(a / step) === 0 ? 'same' : `${sign}$${(Math.round(a / step) * step).toLocaleString('en-US')}`; }
+  return Math.round(a) === 0 ? 'same' : `${sign}${Math.round(a).toLocaleString('en-US')}`;
+}
+const sqmi = v => (v < 0.1 ? v.toFixed(3) : v.toFixed(2)) + ' sq mi';
+
+/* ------------------------------------------------------------------ *
+ * Plan areas on the map
+ * ------------------------------------------------------------------ */
+const areaStyle = a => {
+  const sel = state.selected === a.id;
+  return { color: a.color, weight: sel ? 3.6 : 2.2, opacity: a.lineOpacity ?? 1, fillColor: a.color,
+    fillOpacity: sel ? Math.min(1, (a.fillOpacity ?? 0.14) + 0.14) : (a.fillOpacity ?? 0.14) };
+};
+const areaLabel = a => `<span class="tag" style="background:${esc(a.color)};color:${inkFor(a.color)}">${esc(a.name || 'Unnamed area')}</span>`;
+
+function drawArea(a) {
+  if (a.layer && map.hasLayer(a.layer)) map.removeLayer(a.layer);
+  const layer = L.GeoJSON.geometryToLayer(feature(a.geometry), {});
+  layer.setStyle(areaStyle(a));
+  layer._areaId = a.id;
+  layer.bindTooltip(areaLabel(a), { permanent: true, direction: 'center', className: 'area-tag', interactive: false });
+  layer.on('click', () => {
+    if (map.pm.globalRemovalModeEnabled() || map.pm.globalCutModeEnabled()) return;
+    select(a.id, true);
+    state.analysisSelection = { type: 'plan', id: a.id };
+    renderDemographics(); showTab('demographics');
+  });
+  layer.on('pm:edit pm:dragend pm:rotateend', () => {
+    if (a.layer !== layer || !map.hasLayer(layer)) return;
+    a.geometry = layer.toGeoJSON().geometry; a.rev = revCounter++; a.dirty = true;
+    scheduleUpdate(); commit();
+  });
+  if (a.visible !== false) layer.addTo(map);
+  a.layer = layer;
+  if (map.pm.globalEditModeEnabled()) layer.pm.enable();
+  if (map.pm.globalDragModeEnabled()) layer.pm.enableLayerDrag();
+}
+function restyleArea(a) {
+  if (!a.layer) return;
+  a.layer.setStyle(areaStyle(a));
+  a.layer.setTooltipContent(areaLabel(a));
+}
+
+function addArea(name, geometry, opts = {}) {
+  const a = {
+    id: nextId++, name: name || `Area ${state.plan.areas.length + 1}`, geometry, rev: revCounter++, layer: null,
+    color: opts.color || AREA_COLORS[state.plan.areas.length % AREA_COLORS.length],
+    fillOpacity: Number.isFinite(opts.fillOpacity) ? opts.fillOpacity : 0.14,
+    lineOpacity: Number.isFinite(opts.lineOpacity) ? opts.lineOpacity : 1,
+    visible: opts.visible !== false, origin: opts.origin || 'new', baseKey: opts.baseKey ?? null, dirty: !!opts.dirty,
+  };
+  state.plan.areas.push(a);
+  drawArea(a);
+  if (!opts.quiet) { select(a.id); scheduleUpdate(); commit(); }
+  return a;
+}
+function setAreaVisible(a, visible) {
+  a.visible = visible;
+  if (!a.layer) return;
+  if (visible && !map.hasLayer(a.layer)) a.layer.addTo(map);
+  if (!visible && map.hasLayer(a.layer)) map.removeLayer(a.layer);
+}
+function removeArea(id, { fromMap = false, silent = false } = {}) {
+  const i = state.plan.areas.findIndex(a => a.id === id);
+  if (i < 0) return;
+  const [a] = state.plan.areas.splice(i, 1);
+  if (a.origin === 'base' && a.baseKey != null) state.plan.removedBase.add(String(a.baseKey));
+  if (!fromMap && a.layer && map.hasLayer(a.layer)) map.removeLayer(a.layer);
+  if (state.selected === id) state.selected = null;
+  if (state.analysisSelection.type === 'plan' && state.analysisSelection.id === id) state.analysisSelection = { type: 'whole' };
+  scheduleUpdate();
+  if (!silent) commit();
+}
+function copyArea(id) {
+  const a = state.plan.areas.find(x => x.id === id);
+  if (!a) return;
+  const c = addArea(`${a.name} (copy)`, clone(a.geometry), { color: a.color, fillOpacity: a.fillOpacity, lineOpacity: a.lineOpacity, origin: 'new', quiet: true });
+  state.selected = c.id; state.analysisSelection = { type: 'plan', id: c.id };
+  scheduleUpdate(); commit();
+  toast(`Copied “${a.name}.” The copy sits on top of the original — edit or drag it to make a variation.`);
+}
+function clearPlan() {
+  for (const a of state.plan.areas) if (a.layer && map.hasLayer(a.layer)) map.removeLayer(a.layer);
+  state.plan.areas = []; state.plan.removedBase = new Set(); state.selected = null; state.analysisSelection = { type: 'whole' };
+}
+function select(id, fromMap = false) {
+  state.selected = id;
+  state.analysisSelection = id ? { type: 'plan', id } : { type: 'whole' };
+  for (const a of state.plan.areas) if (a.layer) a.layer.setStyle(areaStyle(a));
+  if (fromMap) showTab('demographics');
+  scheduleUpdate();
+}
+
+function linesToPolygon(g) {
+  const lines = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
+  const rings = lines.filter(l => l.length >= 3).map(l => {
+    const ring = l.slice(); const [a, b] = [ring[0], ring[ring.length - 1]];
+    if (a[0] !== b[0] || a[1] !== b[1]) ring.push(a);
+    return ring;
+  }).filter(r => r.length >= 4);
+  if (!rings.length) return null;
+  return rings.length === 1 ? { type: 'Polygon', coordinates: [rings[0]] } : { type: 'MultiPolygon', coordinates: rings.map(r => [r]) };
+}
+function areasFromFC(fc) {
+  let converted = 0, skipped = 0;
+  const out = [];
+  fc.features.forEach((f, i) => {
+    let g = f.geometry;
+    if (g.type === 'LineString' || g.type === 'MultiLineString') { g = linesToPolygon(g); if (g) converted++; }
+    if (!g || !isPoly(g)) { skipped++; return; }
+    const p = f.properties || {};
+    let name = String(p.name ?? p.Name ?? p.NAME ?? p.title ?? p.label ?? p.area_name ?? '').trim();
+    if (NAME_FIXES[name]) name = NAME_FIXES[name];
+    out.push({
+      name, geometry: g, color: hexToRgb(p.color) ? rgbToHex(hexToRgb(p.color)) : null,
+      fillOpacity: Number.isFinite(toNum(p.fill_opacity)) ? clamp01(toNum(p.fill_opacity)) : undefined,
+      lineOpacity: Number.isFinite(toNum(p.line_opacity)) ? clamp01(toNum(p.line_opacity)) : undefined,
+      visible: p.visible !== false && p.visible !== 'false',
+      baseId: p.base_id != null ? String(p.base_id) : null,
+      key: String(p.OBJECTID ?? p.objectid ?? f.id ?? i + 1),
+    });
+  });
+  return { areas: out, converted, skipped };
+}
+
+map.on('pm:create', e => {
+  const g = e.layer.toGeoJSON().geometry;
+  map.removeLayer(e.layer);
+  addArea(null, g);
+  showTab('plan');
+});
+map.on('pm:remove', e => { if (e.layer && e.layer._areaId) removeArea(e.layer._areaId, { fromMap: true }); });
+map.on('pm:cut', e => {
+  const id = e.originalLayer && e.originalLayer._areaId;
+  if (!id) return;
+  const a = state.plan.areas.find(x => x.id === id);
+  if (!a) return;
+  const g = e.layer && e.layer.toGeoJSON ? e.layer.toGeoJSON().geometry : null;
+  if (e.layer) map.removeLayer(e.layer);
+  if (!g || !isPoly(g)) { removeArea(id); return; }
+  a.geometry = g; a.rev = revCounter++; a.dirty = true; a.layer = null; drawArea(a); scheduleUpdate(); commit();
+});
+
+/* ------------------------------------------------------------------ *
+ * Base polygons, saving and opening plans
+ * ------------------------------------------------------------------ */
+async function fetchBaseAreas() {
+  if (!state.baseAreas.length) {
+    const fc = normalizeFC(await fetchJSON(BASE_PLAN_URL));
+    state.baseAreas = areasFromFC(fc).areas;
+  }
+  return state.baseAreas;
+}
+async function loadBasePlan() {
+  try {
+    const base = await fetchBaseAreas();
+    state.plan.name = 'Base planning areas';
+    $('#plan-name').value = state.plan.name;
+    base.forEach(b => addArea(b.name, clone(b.geometry), { quiet: true, color: b.color, visible: b.visible, origin: 'base', baseKey: b.key }));
+    state.selected = null;
+    scheduleUpdate();
+  } catch (err) {
+    console.warn(`Could not load ${BASE_PLAN_URL}`, err);
+    toast(`Could not load ${BASE_PLAN_URL}. You can still draw or import planning areas.`, 'error', 6500);
+  }
+}
+
+function planFeatureCollection(areas) {
+  const metrics = availableMetrics();
+  return {
+    type: 'FeatureCollection',
+    planner: {
+      app: 'area-planner', version: 2, name: state.plan.name, saved: new Date().toISOString(),
+      contents: 'new and edited polygons only', removed_base: [...state.plan.removedBase], layer_styles: state.layerStyles,
+    },
+    features: areas.map(a => {
+      const r = areaStats(a);
+      const props = {
+        name: a.name, status: a.origin === 'base' ? 'edited' : 'new', base_id: a.origin === 'base' ? a.baseKey : null,
+        color: a.color, fill_opacity: Number((a.fillOpacity ?? 0.14).toFixed(2)), line_opacity: Number((a.lineOpacity ?? 1).toFixed(2)),
+        visible: a.visible !== false, sq_mi: Number(r.sqmi.toFixed(4)),
+      };
+      if (r.demo) for (const m of metrics) { const v = metricValue(m, r.demo.vals); if (v !== null) props[m.prop] = Number(v.toFixed(m.type === 'pct' ? 2 : 0)); }
+      return { type: 'Feature', properties: props, geometry: a.geometry };
+    }),
+  };
+}
+const changedAreas = () => state.plan.areas.filter(a => a.origin !== 'base' || a.dirty);
+
+function savePlan() {
+  const areas = changedAreas();
+  if (!areas.length && !state.plan.removedBase.size) return toast('There’s nothing new to save — no polygons have been added or edited.', 'error');
+  download(`${slug(state.plan.name)}_${today()}.geojson`, JSON.stringify(planFeatureCollection(areas)));
+  const bits = [`Saved ${areas.length} new or edited polygon${areas.length === 1 ? '' : 's'}`];
+  if (state.plan.removedBase.size) bits.push(`and ${state.plan.removedBase.size} removed base polygon${state.plan.removedBase.size === 1 ? '' : 's'}`);
+  toast(`${bits.join(' ')}. Open it later with Open plan.`);
+}
+
+const sameGeom = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Opening a plan: start from the base polygons, then apply the saved changes on top.
+async function openPlan(res, fileName) {
+  const { areas } = areasFromFC(res.fc);
+  if (!areas.length) throw new Error(`${fileName} has no polygons or outlines to use as areas.`);
+  const meta = res.meta || {};
+  clearPlan();
+  await loadBasePlan();
+  state.plan.name = meta.name || fileName.replace(/\.[^.]+$/, '');
+  $('#plan-name').value = state.plan.name;
+  const byKey = new Map(state.plan.areas.map(a => [String(a.baseKey), a]));
+  const byName = new Map(state.plan.areas.map(a => [a.name, a]));
+  let added = 0, edited = 0;
+  for (const s of areas) {
+    const target = (s.baseId && byKey.get(s.baseId)) || (!s.baseId && byName.get(s.name));
+    if (target) {
+      const changed = !sameGeom(target.geometry, s.geometry) || (s.color && s.color !== target.color)
+        || (s.fillOpacity !== undefined && s.fillOpacity !== target.fillOpacity) || (s.lineOpacity !== undefined && s.lineOpacity !== target.lineOpacity) || s.baseId;
+      Object.assign(target, { name: s.name || target.name, geometry: s.geometry, rev: revCounter++, dirty: !!changed });
+      if (s.color) target.color = s.color;
+      if (s.fillOpacity !== undefined) target.fillOpacity = s.fillOpacity;
+      if (s.lineOpacity !== undefined) target.lineOpacity = s.lineOpacity;
+      drawArea(target); edited += changed ? 1 : 0;
+    } else {
+      addArea(s.name, s.geometry, { quiet: true, color: s.color, fillOpacity: s.fillOpacity, lineOpacity: s.lineOpacity, visible: s.visible, origin: 'new' });
+      added++;
+    }
+  }
+  for (const k of meta.removed_base || []) { const a = byKey.get(String(k)); if (a) removeArea(a.id, { silent: true }); }
+  if (meta.layer_styles && typeof meta.layer_styles === 'object') {
+    state.layerStyles = meta.layer_styles; saveLayerStyles();
+    SLOTS.forEach(s => applySlotStyle(s.key));
+  }
+  state.selected = null;
+  return { added, edited, removed: (meta.removed_base || []).length };
+}
+
+async function importAreas({ replace = false } = {}) {
+  const file = await pickFile();
+  if (!file) return;
+  try {
+    const res = await readGeoFile(file);
+    if (replace) {
+      const r = await openPlan(res, file.name);
+      toast(`Opened “${state.plan.name}”: ${r.added} new, ${r.edited} edited${r.removed ? `, ${r.removed} removed` : ''} on top of the base polygons.`);
+    } else {
+      const { areas, converted, skipped } = areasFromFC(res.fc);
+      if (!areas.length) throw new Error(`${file.name} has no polygons or outlines to use as areas.`);
+      areas.forEach(a => addArea(a.name, a.geometry, { quiet: true, color: a.color, fillOpacity: a.fillOpacity, lineOpacity: a.lineOpacity, visible: a.visible, origin: 'new' }));
+      const bits = [`Added ${areas.length} area${areas.length === 1 ? '' : 's'}.`];
+      if (converted) bits.push(`Closed ${converted} outline${converted === 1 ? '' : 's'} drawn as lines.`);
+      if (skipped) bits.push(`Skipped ${skipped} point${skipped === 1 ? '' : 's'}.`);
+      toast(bits.join(' '));
+    }
+    fitTo(state.plan.areas.map(a => a.layer));
+    showTab('plan'); scheduleUpdate(); commit();
+  } catch (err) {
+    console.error(err);
+    toast(err.message || `Couldn’t read ${file.name}.`, 'error');
+  }
+}
+
+async function loadCompare() {
+  const file = await pickFile();
+  if (!file) return;
+  try {
+    const res = await readGeoFile(file);
+    const { areas } = areasFromFC(res.fc);
+    if (!areas.length) throw new Error(`${file.name} has no polygons or outlines to compare.`);
+    setCompare({
+      name: (res.meta && res.meta.name) || file.name.replace(/\.[^.]+$/, ''),
+      saved: res.meta && res.meta.saved,
+      areas: areas.map((a, i) => ({ name: a.name || `Area ${i + 1}`, geometry: a.geometry, id: `c${i}`, rev: 0 })),
+    });
+    showTab('compare');
+    toast(`Loaded “${state.compare.name}” for comparison.`);
+  } catch (err) {
+    console.error(err);
+    toast(err.message || `Couldn’t read ${file.name}.`, 'error');
+  }
+}
+function setCompare(c) {
+  if (state.compare && state.compare.layer) map.removeLayer(state.compare.layer);
+  state.compare = c;
+  if (c) {
+    c.visible = c.visible !== false;
+    c.layer = L.geoJSON({ type: 'FeatureCollection', features: c.areas.map(a => ({ type: 'Feature', properties: { name: a.name }, geometry: a.geometry })) }, {
+      pane: 'comparePane', pmIgnore: true, snapIgnore: true,
+      style: { color: C.harbor, weight: 2.2, dashArray: '6 5', fillColor: C.harbor, fillOpacity: 0.07 },
+      onEachFeature: (f, l) => l.bindTooltip(esc(f.properties.name), { direction: 'top', className: 'compare-tag' }),
+    });
+    if (c.visible) c.layer.addTo(map);
+  }
+  scheduleUpdate();
+}
+function fitTo(layers) {
+  const b = L.latLngBounds([]);
+  layers.filter(Boolean).forEach(l => { if (l.getBounds) b.extend(l.getBounds()); });
+  if (b.isValid()) map.fitBounds(b, { padding: [30, 30], maxZoom: 17 });
+}
+
+function autosave() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      name: state.plan.name, removedBase: [...state.plan.removedBase],
+      areas: state.plan.areas.map(a => ({ name: a.name, geometry: a.geometry, color: a.color, fillOpacity: a.fillOpacity, lineOpacity: a.lineOpacity,
+        visible: a.visible, origin: a.origin, baseKey: a.baseKey, dirty: a.dirty })),
+    }));
+  } catch { /* storage full or unavailable */ }
+}
+
+function exportCSV() {
+  const metrics = availableMetrics();
+  const header = ['plan', 'area', 'sq_mi', ...metrics.map(m => m.prop), 'residential_buildings', 'residential_units', 'tracts_used'];
+  const rowFor = (label, r) => [state.plan.name, label, r.sqmi.toFixed(4),
+    ...metrics.map(m => { const v = r.demo ? metricValue(m, r.demo.vals) : null; return v === null ? '' : v.toFixed(m.type === 'pct' ? 2 : 0); }),
+    r.demo ? r.demo.buildingsUsed : '', r.demo ? Math.round(r.demo.residentialUnits || 0) : '', r.demo ? r.demo.tractsUsed : ''];
+  const rows = state.plan.areas.map(a => rowFor(a.name, areaStats(a)));
+  const total = planStats('plan'); if (total) rows.push(rowFor('Whole plan', total));
+  const csv = [header, ...rows].map(r => r.map(v => { const x = String(v ?? ''); return /[",\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x; }).join(',')).join('\n');
+  download(`${slug(state.plan.name)}_demographics_${today()}.csv`, csv, 'text/csv');
+}
+
+/* ------------------------------------------------------------------ *
+ * Color + transparency picker
+ * ------------------------------------------------------------------ */
+const picker = (() => {
+  const el = document.createElement('div');
+  el.className = 'picker'; el.hidden = true; el.setAttribute('role', 'dialog');
+  el.innerHTML = `
+    <h3 id="pk-title">Style</h3>
+    <div class="wheel" id="pk-wheel" aria-label="Color wheel"><div class="shade"></div><div class="dot"></div></div>
+    <div class="field"><span>Brightness</span><input type="range" id="pk-v" min="0" max="100"><output id="pk-v-o"></output></div>
+    <div class="hexrow"><span class="preview" id="pk-prev"></span><input id="pk-hex" maxlength="7" aria-label="Hex color"><input type="color" id="pk-native" aria-label="System color picker" style="width:34px;height:26px;padding:0;border:0;background:none"></div>
+    <div class="swatches" id="pk-sw"></div>
+    <div class="field" id="pk-fill-f"><span id="pk-fill-l">Fill transparency</span><input type="range" id="pk-fill" min="0" max="100"><output id="pk-fill-o"></output></div>
+    <div class="field" id="pk-line-f"><span>Outline transparency</span><input type="range" id="pk-line" min="0" max="100"><output id="pk-line-o"></output></div>
+    <div class="field" id="pk-size-f"><span id="pk-size-l">Size</span><input type="range" id="pk-size" min="2" max="40"><output id="pk-size-o"></output></div>
+    <div class="actions"><button class="btn quiet small" id="pk-reset">Reset</button><button class="btn small" id="pk-done">Done</button></div>`;
+  document.body.appendChild(el);
+  const q = s => el.querySelector(s);
+  const wheel = q('#pk-wheel'), dot = q('.dot'), shade = q('.shade');
+  q('#pk-sw').innerHTML = [...AREA_COLORS, '#1C2433', '#9D2235', '#27407A', '#2F6F5E'].map(c => `<button type="button" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join('');
+  let cur = null;   // { hsv, style, opts }
+
+  function paint() {
+    const { h, s, v } = cur.hsv;
+    const hex = hsvToHex(h, s, v);
+    cur.style.color = hex;
+    const R = wheel.clientWidth / 2, ang = (h - 90) * Math.PI / 180;
+    dot.style.left = `${R + Math.cos(ang) * s * R}px`; dot.style.top = `${R + Math.sin(ang) * s * R}px`;
+    dot.style.background = hex;
+    shade.style.opacity = 1 - v;
+    q('#pk-v').value = Math.round(v * 100); q('#pk-v-o').textContent = `${Math.round(v * 100)}%`;
+    if (document.activeElement !== q('#pk-hex')) q('#pk-hex').value = hex;
+    q('#pk-native').value = hex.toLowerCase();
+    const prev = q('#pk-prev');
+    prev.style.borderColor = rgba(hex, cur.style.lineOpacity ?? 1);
+    prev.style.background = rgba(hex, cur.style.fillOpacity ?? 1);
+    const t = x => `${Math.round((1 - (x ?? 1)) * 100)}%`;
+    q('#pk-fill').value = Math.round((1 - (cur.style.fillOpacity ?? 1)) * 100); q('#pk-fill-o').textContent = t(cur.style.fillOpacity);
+    q('#pk-line').value = Math.round((1 - (cur.style.lineOpacity ?? 1)) * 100); q('#pk-line-o').textContent = t(cur.style.lineOpacity);
+    if (cur.style.radius !== undefined) { q('#pk-size').value = cur.style.radius; q('#pk-size-o').textContent = Math.round(cur.style.radius); }
+    cur.opts.onInput({ ...cur.style });
+  }
+  function fromWheel(e) {
+    const r = wheel.getBoundingClientRect(), R = r.width / 2;
+    const dx = e.clientX - r.left - R, dy = e.clientY - r.top - R;
+    cur.hsv.h = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    cur.hsv.s = Math.min(1, Math.hypot(dx, dy) / R);
+    if (cur.hsv.v < 0.15) cur.hsv.v = 1;
+    paint();
+  }
+  wheel.addEventListener('pointerdown', e => { wheel.setPointerCapture(e.pointerId); fromWheel(e); });
+  wheel.addEventListener('pointermove', e => { if (wheel.hasPointerCapture(e.pointerId)) fromWheel(e); });
+  q('#pk-v').addEventListener('input', e => { cur.hsv.v = e.target.value / 100; paint(); });
+  q('#pk-hex').addEventListener('input', e => { if (hexToRgb(e.target.value) && /^#?[0-9a-f]{6}$/i.test(e.target.value)) { cur.hsv = hexToHsv(e.target.value); paint(); } });
+  q('#pk-native').addEventListener('input', e => { cur.hsv = hexToHsv(e.target.value); paint(); });
+  q('#pk-sw').addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) { cur.hsv = hexToHsv(b.dataset.c); paint(); } });
+  q('#pk-fill').addEventListener('input', e => { cur.style.fillOpacity = 1 - e.target.value / 100; paint(); });
+  q('#pk-line').addEventListener('input', e => { cur.style.lineOpacity = 1 - e.target.value / 100; paint(); });
+  q('#pk-size').addEventListener('input', e => { cur.style.radius = Number(e.target.value); paint(); });
+  q('#pk-reset').addEventListener('click', () => { cur.style = { ...cur.opts.defaults }; cur.hsv = hexToHsv(cur.style.color); paint(); });
+  q('#pk-done').addEventListener('click', () => close());
+  document.addEventListener('pointerdown', e => { if (cur && !el.contains(e.target) && !(cur.opts.anchor && cur.opts.anchor.contains(e.target))) close(); }, true);
+  document.addEventListener('keydown', e => { if (cur && e.key === 'Escape') close(); });
+
+  function open(anchor, opts) {
+    if (cur) close();
+    cur = { style: { ...opts.style }, hsv: hexToHsv(opts.style.color), opts: { ...opts, anchor } };
+    q('#pk-title').textContent = opts.title || 'Style';
+    q('#pk-fill-f').hidden = opts.fields.fill !== true;
+    q('#pk-fill-l').textContent = opts.fields.fillLabel || 'Fill transparency';
+    q('#pk-line-f').hidden = opts.fields.line !== true;
+    q('#pk-size-f').hidden = opts.fields.size !== true;
+    q('#pk-size-l').textContent = opts.fields.sizeLabel || 'Size';
+    if (opts.fields.size) { q('#pk-size').min = opts.fields.sizeMin || 2; q('#pk-size').max = opts.fields.sizeMax || 40; }
+    el.hidden = false;
+    const r = anchor.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
+    el.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left))}px`;
+    el.style.top = `${Math.max(8, Math.min(window.innerHeight - h - 8, r.bottom + 6))}px`;
+    paint();
+    q('#pk-done').focus();
+  }
+  function close() {
+    if (!cur) return;
+    const c = cur; cur = null; el.hidden = true;
+    c.opts.onClose && c.opts.onClose({ ...c.style });
+  }
+  return { open, close };
+})();
+
+function openAreaStyle(a, anchor) {
+  const before = JSON.stringify([a.color, a.fillOpacity, a.lineOpacity]);
+  picker.open(anchor, {
+    title: `Style · ${a.name}`,
+    style: { color: a.color, fillOpacity: a.fillOpacity ?? 0.14, lineOpacity: a.lineOpacity ?? 1 },
+    defaults: { color: a.color, fillOpacity: 0.14, lineOpacity: 1 },
+    fields: { fill: true, line: true },
+    onInput: s => {
+      a.color = s.color; a.fillOpacity = s.fillOpacity; a.lineOpacity = s.lineOpacity; restyleArea(a);
+      const sw = document.querySelector(`.area-row[data-id="${a.id}"] .area-swatch`);
+      if (sw) { sw.style.setProperty('--sw', a.color); sw.style.setProperty('--swfill', `${Math.round(a.fillOpacity * 100 + 10)}%`); }
+    },
+    onClose: () => {
+      if (JSON.stringify([a.color, a.fillOpacity, a.lineOpacity]) !== before) { a.dirty = true; commit(); renderPlanList(true); }
+    },
+  });
+}
+function openSlotStyle(slot, anchor) {
+  const fields = slot.kind === 'point' ? { fill: true, fillLabel: 'Transparency', size: true, sizeMin: 2, sizeMax: 16 }
+    : slot.kind === 'heat' ? { fill: true, fillLabel: 'Transparency', size: true, sizeLabel: 'Spread', sizeMin: 8, sizeMax: 60 }
+    : { fill: true, line: true };
+  picker.open(anchor, {
+    title: `Style · ${slot.title}`, style: styleOf(slot), defaults: { ...slot.style }, fields,
+    onInput: s => { state.layerStyles[slot.key] = { ...(state.layerStyles[slot.key] || {}), ...s }; applySlotStyle(slot.key); },
+    onClose: () => saveLayerStyles(),
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Rendering
+ * ------------------------------------------------------------------ */
+function showTab(name) {
+  for (const t of ['data', 'demographics', 'plan', 'compare']) {
+    $(`#tab-${t}`).setAttribute('aria-selected', String(t === name));
+    $(`#panel-${t}`).hidden = t !== name;
+  }
+  if (name === 'demographics') renderDemographics();
+  if (name === 'compare') renderCompare();
+}
+$$('.tab').forEach(t => t.addEventListener('click', () => showTab(t.id.replace('tab-', ''))));
+
+function renderSlots() {
+  $('#slots').innerHTML = SLOTS.map(s => {
+    const e = state.layers[s.key], st = styleOf(s);
+    const keyCls = s.kind === 'point' ? 'key point' : s.kind === 'heat' ? 'key heat' : 'key';
+    let body = `<p class="help">${esc(s.help)}</p>`;
+    if (e) {
+      const count = s.kind === 'heat'
+        ? `<strong>${Math.round(e.members || 0).toLocaleString()}</strong> members in ${e.rows.length.toLocaleString()} grid cells`
+        : `<strong>${e.fc.features.length.toLocaleString()}</strong> features${e.fileName && e.fileName.startsWith('City') ? ` <span style="color:#505B6E">(live from ${esc(e.fileName)})</span>` : ''}`;
+      const status = s.kind === 'heat' && e.statuses.length > 1
+        ? `<label class="inline">Show <select class="small" data-act="status">${e.statuses.map(k => `<option value="${k}" ${k === e.status ? 'selected' : ''}>${{ total: 'All members', active: 'Active', disengaged: 'Disengaged', milestone: 'Milestone complete', inquiry: 'Inquiry' }[k]}</option>`).join('')}</select></label>` : '';
+      body += `<p class="status">${count}</p>
+        <div class="row controls"><label class="inline"><input type="checkbox" data-act="toggle" ${e.visible ? 'checked' : ''}> Show</label>
+          ${s.kind !== 'heat' ? '<button class="btn quiet small" data-act="zoom">Zoom to</button>' : ''}
+          <button class="btn quiet small" data-act="style">Style</button>${status}</div>`;
+    } else if (s.kind === 'heat') {
+      body += `<p class="status">Not loaded.</p><p class="fieldnote">Run <code>scripts/05_outreach_heatmap.py</code> to create <code>docs/data/outreach_heat.csv</code>.</p>`;
+    } else {
+      body += `<p class="status">File not loaded.</p><p class="fieldnote">Expected: <code>${esc(s.url)}</code></p>`;
+    }
+    return `<div class="slot" data-key="${s.key}"><span class="${keyCls}" style="--c:${esc(st.color)};--fillpct:${Math.round((st.fillOpacity ?? 0.2) * 100)}%"></span><div><h2>${esc(s.title)}</h2>${body}</div></div>`;
+  }).join('');
+}
+$('#slots').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn || btn.type === 'checkbox' || btn.tagName === 'SELECT') return;
+  const key = btn.closest('.slot').dataset.key, slot = SLOTS.find(s => s.key === key);
+  if (btn.dataset.act === 'zoom') fitTo([state.layers[key] && state.layers[key].leaflet]);
+  if (btn.dataset.act === 'style') openSlotStyle(slot, btn);
+});
+$('#slots').addEventListener('change', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const key = el.closest('.slot').dataset.key, entry = state.layers[key];
+  if (!entry) return;
+  if (el.dataset.act === 'toggle') {
+    entry.visible = el.checked;
+    if (entry.visible) entry.leaflet.addTo(map); else map.removeLayer(entry.leaflet);
+    reorderRefLayers(); updateLabels(); renderLegend();
+  }
+  if (el.dataset.act === 'status') { entry.status = el.value; setHeatData(entry); renderSlots(); renderLegend(); }
+});
+
+let listIds = '';
+function renderPlanList(force = false) {
+  const areas = state.plan.areas;
+  $('#plan-count').textContent = areas.length;
+  $('#plan-empty').hidden = areas.length > 0;
+  const ids = areas.map(a => `${a.id}:${a.color}:${a.fillOpacity}:${a.visible}:${a.origin}:${a.dirty}`).join(',');
+  const list = $('#area-list');
+  if (ids !== listIds || force) {
+    listIds = ids;
+    const focused = document.activeElement && document.activeElement.classList.contains('area-name') ? document.activeElement.closest('.area-row').dataset.id : null;
+    list.innerHTML = areas.map(a => {
+      const badge = a.origin !== 'base' ? '<span class="area-badge new">new</span>' : a.dirty ? '<span class="area-badge edited">edited</span>' : '';
+      return `
+      <li class="area-row" data-id="${a.id}" style="--area-color:${esc(a.color)}">
+        <input class="area-toggle" type="checkbox" data-act="toggle-area" ${a.visible !== false ? 'checked' : ''} aria-label="Show ${esc(a.name)}">
+        <button class="area-swatch" data-act="style" style="--sw:${esc(a.color)};--swfill:${Math.round((a.fillOpacity ?? 0.14) * 100 + 10)}%" title="Change color and transparency" aria-label="Change color and transparency of ${esc(a.name)}"></button>
+        <div>
+          <div style="display:flex;align-items:center"><input class="area-name" value="${esc(a.name)}" aria-label="Area name">${badge}</div>
+          <div class="area-sub"><span class="area-meta"></span><span class="row">
+            <button class="icon-btn" data-act="stats">Demographics</button>
+            <button class="icon-btn" data-act="copy">Copy</button>
+            <button class="icon-btn" data-act="zoom">Zoom</button>
+            <button class="icon-btn" data-act="remove">Remove</button>
+          </span></div>
+        </div>
+      </li>`;
+    }).join('');
+    if (focused) { const inp = list.querySelector(`[data-id="${focused}"] .area-name`); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } }
+  }
+  for (const a of areas) {
+    const li = list.querySelector(`[data-id="${a.id}"]`);
+    if (!li) continue;
+    li.classList.toggle('selected', state.selected === a.id);
+    const r = areaStats(a);
+    const pop = r.demo && Number.isFinite(r.demo.vals.hh_pop) ? ` · ~${fmt(null, r.demo.vals.hh_pop)} people` : '';
+    li.querySelector('.area-meta').textContent = `${sqmi(r.sqmi)}${pop}`;
+  }
+  const all = $('#toggle-all-areas');
+  all.checked = areas.length > 0 && areas.every(a => a.visible !== false);
+  all.indeterminate = areas.some(a => a.visible !== false) && !all.checked;
+  $('#btn-save-plan').textContent = `Save changes (${changedAreas().length})`;
+}
+
+$('#area-list').addEventListener('click', e => {
+  const li = e.target.closest('.area-row'); if (!li) return;
+  const id = Number(li.dataset.id), a = state.plan.areas.find(x => x.id === id); if (!a) return;
+  const act = e.target.closest('[data-act]');
+  const what = act && act.dataset.act;
+  if (what === 'remove') return removeArea(id);
+  if (what === 'copy') return copyArea(id);
+  if (what === 'zoom') { fitTo([a.layer]); select(id); return; }
+  if (what === 'stats') { select(id); showTab('demographics'); return; }
+  if (what === 'style') { select(id); openAreaStyle(a, act); return; }
+  if (!e.target.classList.contains('area-name') && !e.target.classList.contains('area-toggle')) select(id);
+});
+$('#area-list').addEventListener('change', e => {
+  const li = e.target.closest('.area-row'); if (!li) return;
+  const a = state.plan.areas.find(x => x.id === Number(li.dataset.id)); if (!a) return;
+  if (e.target.matches('[data-act="toggle-area"]')) { setAreaVisible(a, e.target.checked); renderPlanList(); autosave(); }
+  if (e.target.classList.contains('area-name')) commit();   // one undo step per rename
+});
+$('#area-list').addEventListener('input', e => {
+  if (!e.target.classList.contains('area-name')) return;
+  const a = state.plan.areas.find(x => x.id === Number(e.target.closest('.area-row').dataset.id));
+  a.name = e.target.value; a.dirty = true;
+  if (a.layer) a.layer.setTooltipContent(areaLabel(a));
+  renderDemographics(); renderCompareSoon(); autosave();
+});
+
+function statsBlock(r) {
+  if (!state.demographic.ready) return `<p class="empty" style="padding:12px 0">Demographics are unavailable until <code>philly_tracts_acs2024.csv</code> and <code>building_weights_web.csv</code> load successfully.</p>`;
+  if (!r.demo || !r.demo.buildingsUsed) return `<p class="empty" style="padding:12px 0">No modeled residential buildings fall inside this polygon.</p>`;
+  const metrics = availableMetrics();
+  const groups = [...new Set(metrics.map(m => m.group))];
+  let html = groups.map(g => `<div class="group"><h3>${esc(g)}</h3><dl class="stats">${metrics.filter(m => m.group === g).map(m => `<dt>${esc(m.label)}</dt><dd>${esc(fmt(m, metricValue(m, r.demo.vals)))}</dd>`).join('')}</dl></div>`).join('');
+  html += `<div class="group"><h3>Model coverage</h3><dl class="stats">
+    <dt>Residential buildings represented</dt><dd>${r.demo.buildingsUsed.toLocaleString()}</dd>
+    <dt>Modeled residential-unit capacity</dt><dd>${Math.round(r.demo.residentialUnits || 0).toLocaleString()}</dd>
+    <dt>ACS tracts contributing</dt><dd>${(r.demo.tractsUsed || 0).toLocaleString()}</dd>
+    <dt>Likely vacant buildings inside</dt><dd>${(r.demo.vacantBuildings || 0).toLocaleString()}</dd>
+  </dl></div>`;
+  return html;
+}
+
+function analysisResult() {
+  const sel = state.analysisSelection || { type: 'whole' };
+  if (sel.type === 'reference' && sel.geometry) return { name: sel.name || 'Selected polygon', r: analyze(sel.geometry), key: '__reference__' };
+  if (sel.type === 'plan') { const a = state.plan.areas.find(x => x.id === sel.id); if (a) return { name: a.name || 'Unnamed area', r: areaStats(a), key: String(a.id) }; }
+  return { name: 'Whole plan', r: planStats('plan'), key: '' };
+}
+
+function renderDemographics() {
+  const selectEl = $('#demo-scope');
+  const cur = analysisResult();
+  const refOption = state.analysisSelection.type === 'reference' ? `<option value="__reference__" selected>${esc(state.analysisSelection.name || 'Selected map polygon')}</option>` : '';
+  selectEl.innerHTML = `${refOption}<option value="" ${cur.key === '' ? 'selected' : ''}>Whole plan</option>` + state.plan.areas.map(a => `<option value="${a.id}" ${cur.key === String(a.id) ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
+  const box = $('#demographics');
+  if (!cur.r) { box.innerHTML = `<p class="empty">Add or load at least one planning polygon.</p>`; return; }
+  const summary = cur.r.demo && cur.r.demo.buildingsUsed ? `${sqmi(cur.r.sqmi)} • ${cur.r.demo.buildingsUsed.toLocaleString()} residential building locations • ${cur.r.demo.tractsUsed.toLocaleString()} ACS tracts` : sqmi(cur.r.sqmi);
+  box.innerHTML = `<div class="details-head"><h2>${esc(cur.name)}</h2></div><p class="summary">${summary}</p>${statsBlock(cur.r)}
+    <p class="note">Household population is modeled building by building from ACS tract totals, OPA unit counts, vacancy, and owner and renter household sizes. Inside a polygon, person counts are split by modeled population, household counts by occupied units, and owner or renter counts by owner or renter units, so every tract still adds up to its ACS total. Percentages are recalculated from those counts; median income, rent and home value are household-weighted averages of tract medians.</p>
+    <div class="row" style="margin-top:12px"><button class="btn quiet small" id="btn-csv">Download plan demographics (CSV)</button></div>`;
+  $('#btn-csv').addEventListener('click', exportCSV);
+}
+$('#demo-scope').addEventListener('change', e => {
+  const v = e.target.value;
+  if (v === '__reference__') return;
+  state.analysisSelection = v ? { type: 'plan', id: Number(v) } : { type: 'whole' };
+  state.selected = v ? Number(v) : null;
+  renderDemographics(); renderPlanList();
+});
+
+function compareRows(ra, rb) {
+  const metrics = availableMetrics();
+  let rows = '';
+  for (const g of [...new Set(metrics.map(m => m.group))]) {
+    rows += `<tr class="grp"><td colspan="4">${esc(g)}</td></tr>`;
+    for (const m of metrics.filter(x => x.group === g)) {
+      const av = metricValue(m, ra && ra.demo && ra.demo.vals), bv = metricValue(m, rb && rb.demo && rb.demo.vals);
+      const d = av !== null && bv !== null && Number.isFinite(av) && Number.isFinite(bv) ? av - bv : null;
+      rows += `<tr><td>${esc(m.label)}</td><td>${esc(fmt(m, av))}</td><td>${esc(fmt(m, bv))}</td><td class="diff">${esc(fmtDiff(m, d))}</td></tr>`;
+    }
+  }
+  return rows;
+}
+function renderCompare() {
+  const box = $('#compare'), areas = state.plan.areas;
+  if (!areas.some(a => a.id === Number(state.compareA)) && areas[0]) state.compareA = areas[0].id;
+  if (!areas.some(a => a.id === Number(state.compareB)) && areas[1]) state.compareB = areas[1].id;
+  const a = areas.find(x => x.id === Number(state.compareA)), b = areas.find(x => x.id === Number(state.compareB));
+  const options = id => areas.map(x => `<option value="${x.id}" ${x.id === Number(id) ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+  let html = `<div class="cmp-head"><h2 style="margin:0;font-size:16px">Compare planning polygons</h2><p class="summary" style="margin:0">Compare demographics directly between any two of the loaded planning polygons.</p></div>`;
+  if (areas.length >= 2 && a && b) {
+    html += `<div class="compare-controls"><label>Area A<select id="cmp-area-a">${options(state.compareA)}</select></label><label>Area B<select id="cmp-area-b">${options(state.compareB)}</select></label></div>
+      <div class="table-wrap"><table class="cmp"><thead><tr><th></th><th>${esc(a.name)}</th><th>${esc(b.name)}</th><th>A − B</th></tr></thead><tbody>${compareRows(areaStats(a), areaStats(b))}</tbody></table></div>`;
+  } else html += '<p class="empty">At least two planning polygons are needed for a direct comparison.</p>';
+  html += `<div class="compare-section"><div class="cmp-head"><h2 style="margin:0;font-size:16px">Compare with a saved plan</h2>`;
+  const c = state.compare;
+  if (!c) {
+    html += `<p class="summary" style="margin:0">Load a previously saved GeoJSON plan to compare the entire current plan against it.</p><div><button class="btn" id="btn-load-cmp">Load saved plan</button></div></div></div>`;
+  } else {
+    const cur = planStats('plan'), old = planStats('compare');
+    const rows = cur && old && cur.demo && old.demo ? compareRows(cur, old) : '';
+    html += `<div class="legend-pair"><div><span class="swatch cur"></span>${esc(state.plan.name)} (current)</div><div><span class="swatch cmp"></span>${esc(c.name)}</div></div><div class="row"><label class="inline"><input type="checkbox" id="cmp-visible" ${c.visible ? 'checked' : ''}> Show saved plan on map</label></div><div class="row"><button class="btn quiet small" id="btn-cmp-replace">Load different plan</button><button class="btn quiet small" id="btn-cmp-clear">Stop comparing</button></div></div>${rows ? `<div class="table-wrap"><table class="cmp"><thead><tr><th></th><th>Current</th><th>Saved</th><th>Difference</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="empty">Demographic data are not ready for one or both plans.</p>'}</div>`;
+  }
+  box.innerHTML = html;
+  $('#cmp-area-a')?.addEventListener('change', e => { state.compareA = Number(e.target.value); renderCompare(); });
+  $('#cmp-area-b')?.addEventListener('change', e => { state.compareB = Number(e.target.value); renderCompare(); });
+  $('#btn-load-cmp')?.addEventListener('click', loadCompare);
+  $('#cmp-visible')?.addEventListener('change', e => { c.visible = e.target.checked; if (c.visible) c.layer.addTo(map); else map.removeLayer(c.layer); });
+  $('#btn-cmp-replace')?.addEventListener('click', loadCompare);
+  $('#btn-cmp-clear')?.addEventListener('click', () => setCompare(null));
+}
+
+let updateTimer = null;
+function scheduleUpdate() {
+  clearTimeout(updateTimer);
+  updateTimer = setTimeout(() => {
+    for (const a of state.plan.areas) if (a.layer) a.layer.setStyle(areaStyle(a));
+    renderPlanList(); renderDemographics();
+    if (!$('#panel-compare').hidden) renderCompare();
+    autosave();
+  }, 60);
+}
+let cmpTimer = null;
+function renderCompareSoon() { clearTimeout(cmpTimer); cmpTimer = setTimeout(() => { if (!$('#panel-compare').hidden) renderCompare(); }, 200); }
+
+/* ------------------------------------------------------------------ *
+ * Wiring
+ * ------------------------------------------------------------------ */
+$('#plan-name').addEventListener('input', e => { state.plan.name = e.target.value || 'Untitled plan'; renderCompareSoon(); autosave(); });
+$('#plan-name').addEventListener('change', () => commit());
+$('#btn-draw').addEventListener('click', () => {
+  map.pm.enableDraw('Polygon', { snappable: true });
+  toast('Click the map to place corners, and click the first corner to finish. Move the cursor to the map edge to pan; Ctrl+Z removes the last corner.');
+});
+$('#btn-import').addEventListener('click', () => importAreas());
+$('#btn-open-plan').addEventListener('click', () => importAreas({ replace: true }));
+$('#btn-save-plan').addEventListener('click', savePlan);
+$('#btn-undo').addEventListener('click', undo);
+$('#btn-redo').addEventListener('click', redo);
+$('#toggle-all-areas').addEventListener('change', e => { state.plan.areas.forEach(a => setAreaVisible(a, e.target.checked)); renderPlanList(); autosave(); });
+$('#toggle-edge-pan').addEventListener('change', e => { edgePan.enabled = e.target.checked; });
+$('#btn-new-plan').addEventListener('click', async () => {
+  if (changedAreas().length && !confirm('Reset to the original planning polygons? Your new and edited polygons will be cleared (you can still undo this).')) return;
+  clearPlan();
+  await loadBasePlan();
+  if (state.plan.areas.length) fitTo(state.plan.areas.map(a => a.layer));
+  scheduleUpdate(); commit();
+});
+
+async function initializeApp() {
+  renderSlots();
+  await Promise.all([loadBaseLayers(), loadOutreachZips()]);
+  await loadDemographicSources();
+
+  let restored = false;
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (saved && saved.areas && saved.areas.length) {
+      state.plan.name = saved.name || 'Untitled plan';
+      $('#plan-name').value = state.plan.name;
+      state.plan.removedBase = new Set(saved.removedBase || []);
+      saved.areas.forEach(a => addArea(a.name, a.geometry, { quiet: true, ...a }));
+      restored = true;
+      toast(`Restored “${state.plan.name}” from your last session.`);
+    }
+  } catch { /* ignore */ }
+  if (!restored) await loadBasePlan();
+
+  if (state.plan.areas.length) fitTo(state.plan.areas.map(a => a.layer));
+  else if (state.layers.city && state.layers.city.leaflet) fitTo([state.layers.city.leaflet]);
+
+  resetHistory();
+  renderSlots(); renderLegend(); scheduleUpdate();
+}
+
+initializeApp();
+window.__planner = { state, map, addArea, analyze, undo, redo, history, picker, copyArea, savePlan, planFeatureCollection, changedAreas, openPlan };
+})();
+</script>
+</body>
+</html>
