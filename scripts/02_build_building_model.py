@@ -124,9 +124,30 @@ def concat_unique(series, max_values=50):
 # =============================================================================
 # 2. OPA POINTS + RECORD CLASSIFICATION
 # =============================================================================
+def opa_points_from_shape(opa):
+    """The full OPA CSV from OpenDataPhilly stores location as
+    'SRID=2272;POINT (x y)' in a column called shape."""
+    raw = opa["shape"].astype("string").str.strip()
+    srid = numeric(raw.str.extract(r"^SRID=(\d+);", expand=False))
+    wkt = raw.str.replace(r"^SRID=\d+;", "", regex=True)
+    good = wkt.str.upper().str.startswith("POINT", na=False) & ~wkt.str.upper().str.contains("EMPTY", na=False)
+    print(f"OPA coordinates: shape column; records without a location: {(~good).sum():,}")
+    opa, wkt = opa.loc[good].copy(), wkt[good]
+    codes = srid[good].dropna().unique()
+    src = int(codes[0]) if len(codes) else 2272
+    if len(codes) > 1:
+        print(f"  WARNING: several SRIDs in shape column {codes}; using EPSG:{src}")
+    print(f"Detected OPA CRS: EPSG:{src}")
+    geom = gpd.GeoSeries.from_wkt(wkt.to_numpy(dtype=object), crs=src)
+    geom.index = opa.index
+    return gpd.GeoDataFrame(opa, geometry=geom, crs=src).to_crs(WORK_CRS)
+
+
 def create_opa_points(opa):
     lat_col = first_existing(opa, ["geocode_lat", "latitude", "lat", "y"])
     lon_col = first_existing(opa, ["geocode_lon", "longitude", "lon", "lng", "x"])
+    if (not lat_col or not lon_col) and "shape" in opa.columns:
+        return opa_points_from_shape(opa)
     if not lat_col or not lon_col:
         print("\nOPA columns:", sorted(opa.columns))
         raise RuntimeError("Could not identify OPA coordinate fields.")
