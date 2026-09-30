@@ -336,7 +336,7 @@ const SLOTS = [
   { key: 'schools', title: 'Schools of Interest', kind: 'point', url: 'data/Schools_of_Interest.geojson', visible: true,
     style: { color: C.amber, fillOpacity: 1, radius: 5 }, help: 'Schools used as planning reference points.' },
   { key: 'outreach', title: 'Outreach Members (heat map)', kind: 'heat', url: 'data/outreach_heat.csv', optional: true, visible: true,
-    style: { color: C.heat, fillOpacity: 0.8, radius: 24 }, help: 'Where program members live, grouped into ~250 m cells. Cells with fewer than 3 members are hidden for privacy.' },
+    style: { color: C.heat, fillOpacity: 0.8, radius: 24 }, help: 'Where program members live, grouped into ~250 m cells. Every polygon\u2019s demographics include a member count.' },
 ];
 
 // ACS count fields and the building weight used to split them inside a polygon.
@@ -383,6 +383,13 @@ const METRICS = [
   { id: 'ba', prop: 'pct_ba_up', group: 'Education and work', label: 'Bachelor’s degree or higher', type: 'pct', num: ['bachelors', 'masters', 'prof_deg', 'doctorate'], den: ['pop25plus'] },
   { id: 'hs', prop: 'pct_hs_only', group: 'Education and work', label: 'High school diploma as highest level', type: 'pct', num: ['hs_grad'], den: ['pop25plus'] },
   { id: 'unemp', prop: 'pct_unemp', group: 'Education and work', label: 'Unemployment rate', type: 'pct', num: ['unemployed'], den: ['employed', 'unemployed'] },
+];
+
+// Outreach member counts inside a polygon (from docs/data/outreach_heat.csv)
+const OUTREACH_STATUS = { total: 'All outreach members', active: 'Active', disengaged: 'Disengaged', milestone: 'Milestone complete', inquiry: 'Inquiry' };
+const OUTREACH_METRICS = [
+  ...Object.entries(OUTREACH_STATUS).map(([k, label]) => ({ id: `out_${k}`, prop: `outreach_${k}`, group: 'Outreach members', label, type: 'count', num: [`out_${k}`] })),
+  { id: 'out_rate', prop: 'outreach_per_1000', group: 'Outreach members', label: 'Members per 1,000 residents', type: 'per1000', num: ['out_total'], den: ['hh_pop'] },
 ];
 
 proj4.defs('EPSG:2272', '+proj=lcc +lat_1=40.96666666666667 +lat_2=39.93333333333333 +lat_0=39.33333333333334 +lon_0=-77.75 +x_0=600000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=us-ft +no_defs');
@@ -932,7 +939,8 @@ async function loadHeat(slot) {
   }).filter(r => Number.isFinite(r.lat) && Number.isFinite(r.lon));
   if (!rows.length) throw new Error('No rows with lat/lon in outreach_heat.csv');
   const statuses = ['total', 'active', 'disengaged', 'milestone', 'inquiry'].filter(s => rows.some(r => Number.isFinite(r[s])));
-  const entry = { rows, statuses, status: 'total', visible: slot.visible !== false, fileName: slot.url.replace(/^data\//, '') };
+  const cell = rows.find(r => Number.isFinite(r.cell))?.cell || 0.0025;
+  const entry = { rows, statuses, cell, status: 'total', visible: slot.visible !== false, fileName: slot.url.replace(/^data\//, '') };
   entry.leaflet = L.heatLayer([], { radius: 24, blur: 20, maxZoom: 15, minOpacity: 0.15 });
   state.layers[slot.key] = entry;
   setHeatData(entry);
@@ -1147,9 +1155,33 @@ function aggregateResidential(aoi) {
   return { vals: sums, buildingsUsed, residentialUnits, vacantBuildings, tractsUsed };
 }
 
+// Members are published as grid-cell counts. A cell cut by the polygon edge
+// contributes the share of its area that falls inside.
+function aggregateOutreach(aoi) {
+  const e = state.layers.outreach;
+  if (!e || !e.rows) return null;
+  const half = e.cell / 2, bb = turf.bbox(aoi), sums = {};
+  for (const s of e.statuses) sums[`out_${s}`] = 0;
+  for (const r of e.rows) {
+    if (r.lon < bb[0] - half || r.lon > bb[2] + half || r.lat < bb[1] - half || r.lat > bb[3] + half) continue;
+    const sq = turf.bboxPolygon([r.lon - half, r.lat - half, r.lon + half, r.lat + half]);
+    let frac;
+    try {
+      if (turf.booleanWithin(sq, aoi)) frac = 1;
+      else { const x = turf.intersect(turf.featureCollection([sq, aoi])); frac = x ? Math.min(1, turf.area(x) / turf.area(sq)) : 0; }
+    } catch { frac = turf.booleanPointInPolygon(turf.point([r.lon, r.lat]), aoi) ? 1 : 0; }
+    if (!frac) continue;
+    for (const s of e.statuses) sums[`out_${s}`] += (r[s] || 0) * frac;
+  }
+  return sums;
+}
+
 function analyze(geometry) {
   const aoi = cleanAoi(geometry);
-  return { sqmi: turf.area(aoi) / SQM_PER_SQMI, demo: aggregateResidential(aoi) };
+  const demo = aggregateResidential(aoi);
+  const out = aggregateOutreach(aoi);
+  if (demo && out) Object.assign(demo.vals, out);
+  return { sqmi: turf.area(aoi) / SQM_PER_SQMI, demo };
 }
 function areaStats(area) {
   const key = `${area.id}|${area.rev}|${state.dataRev}`;
@@ -1179,16 +1211,20 @@ function metricValue(m, vals) {
   const sum = fields => { let s = 0; for (const f of fields) { if (!Number.isFinite(vals[f])) return null; s += vals[f]; } return s; };
   if (m.type === 'count' || m.type === 'money') return sum(m.num);
   const n = sum(m.num), dd = sum(m.den);
-  return n === null || dd === null || dd <= 0 ? null : (n / dd) * 100;
+  if (n === null || dd === null || dd <= 0) return null;
+  return m.type === 'per1000' ? (n / dd) * 1000 : (n / dd) * 100;
 }
 const availableMetrics = () => {
   const have = new Set([...state.tractFields.counts, ...state.tractFields.medians]);
-  return METRICS.filter(m => [...m.num, ...(m.den || [])].every(f => have.has(f)));
+  const out = state.layers.outreach;
+  if (out && out.statuses) out.statuses.forEach(s => have.add(`out_${s}`));
+  return [...METRICS, ...OUTREACH_METRICS].filter(m => [...m.num, ...(m.den || [])].every(f => have.has(f)));
 };
 function fmt(m, v) {
   if (v === null || v === undefined || !Number.isFinite(v)) return '–';
   if (!m || m.type === 'count') return Math.round(v).toLocaleString('en-US');
   if (m.type === 'pct') return v.toFixed(1) + '%';
+  if (m.type === 'per1000') return v.toFixed(1);
   if (m.type === 'money') { const step = v >= 10000 ? 100 : 10; return '$' + (Math.round(v / step) * step).toLocaleString('en-US'); }
   return String(v);
 }
@@ -1196,6 +1232,7 @@ function fmtDiff(m, d) {
   if (d === null || !Number.isFinite(d)) return '–';
   const sign = d > 0 ? '+' : d < 0 ? '−' : '', a = Math.abs(d);
   if (m.type === 'pct') return a < 0.05 ? 'same' : `${sign}${a.toFixed(1)} pts`;
+  if (m.type === 'per1000') return a < 0.05 ? 'same' : `${sign}${a.toFixed(1)}`;
   if (m.type === 'money') { const step = a >= 10000 ? 100 : 10; return Math.round(a / step) === 0 ? 'same' : `${sign}$${(Math.round(a / step) * step).toLocaleString('en-US')}`; }
   return Math.round(a) === 0 ? 'same' : `${sign}${Math.round(a).toLocaleString('en-US')}`;
 }
@@ -1378,7 +1415,7 @@ function planFeatureCollection(areas) {
         color: a.color, fill_opacity: Number((a.fillOpacity ?? 0.14).toFixed(2)), line_opacity: Number((a.lineOpacity ?? 1).toFixed(2)),
         visible: a.visible !== false, sq_mi: Number(r.sqmi.toFixed(4)),
       };
-      if (r.demo) for (const m of metrics) { const v = metricValue(m, r.demo.vals); if (v !== null) props[m.prop] = Number(v.toFixed(m.type === 'pct' ? 2 : 0)); }
+      if (r.demo) for (const m of metrics) { const v = metricValue(m, r.demo.vals); if (v !== null) props[m.prop] = Number(v.toFixed(m.type === 'pct' || m.type === 'per1000' ? 2 : 0)); }
       return { type: 'Feature', properties: props, geometry: a.geometry };
     }),
   };
@@ -1510,7 +1547,7 @@ function exportCSV() {
   const metrics = availableMetrics();
   const header = ['plan', 'area', 'sq_mi', ...metrics.map(m => m.prop), 'residential_buildings', 'residential_units', 'tracts_used'];
   const rowFor = (label, r) => [state.plan.name, label, r.sqmi.toFixed(4),
-    ...metrics.map(m => { const v = r.demo ? metricValue(m, r.demo.vals) : null; return v === null ? '' : v.toFixed(m.type === 'pct' ? 2 : 0); }),
+    ...metrics.map(m => { const v = r.demo ? metricValue(m, r.demo.vals) : null; return v === null ? '' : v.toFixed(m.type === 'pct' || m.type === 'per1000' ? 2 : 0); }),
     r.demo ? r.demo.buildingsUsed : '', r.demo ? Math.round(r.demo.residentialUnits || 0) : '', r.demo ? r.demo.tractsUsed : ''];
   const rows = state.plan.areas.map(a => rowFor(a.name, areaStats(a)));
   const total = planStats('plan'); if (total) rows.push(rowFor('Whole plan', total));
@@ -1791,7 +1828,7 @@ function renderDemographics() {
   if (!cur.r) { box.innerHTML = `<p class="empty">Add or load at least one planning polygon.</p>`; return; }
   const summary = cur.r.demo && cur.r.demo.buildingsUsed ? `${sqmi(cur.r.sqmi)} • ${cur.r.demo.buildingsUsed.toLocaleString()} residential building locations • ${cur.r.demo.tractsUsed.toLocaleString()} ACS tracts` : sqmi(cur.r.sqmi);
   box.innerHTML = `<div class="details-head"><h2>${esc(cur.name)}</h2></div><p class="summary">${summary}</p>${statsBlock(cur.r)}
-    <p class="note">Household population is modeled building by building from ACS tract totals, OPA unit counts, vacancy, and owner and renter household sizes. Inside a polygon, person counts are split by modeled population, household counts by occupied units, and owner or renter counts by owner or renter units, so every tract still adds up to its ACS total. Percentages are recalculated from those counts; median income, rent and home value are household-weighted averages of tract medians.</p>
+    <p class="note">Household population is modeled building by building from ACS tract totals, OPA unit counts, vacancy, and owner and renter household sizes. Inside a polygon, person counts are split by modeled population, household counts by occupied units, and owner or renter counts by owner or renter units, so every tract still adds up to its ACS total. Percentages are recalculated from those counts; median income, rent and home value are household-weighted averages of tract medians. Outreach members are counted from ~250 m grid cells (a cell on the polygon edge counts by the share inside), so treat small-area counts as approximate; members recorded with only a ZIP code are not included.</p>
     <div class="row" style="margin-top:12px"><button class="btn quiet small" id="btn-csv">Download plan demographics (CSV)</button></div>`;
   $('#btn-csv').addEventListener('click', exportCSV);
 }
