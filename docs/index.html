@@ -620,11 +620,12 @@ L.Marker.mergeOptions({ autoPan: true, autoPanPadding: L.point(48, 48), autoPanS
 
 const map = L.map('map', { zoomControl: true }).setView([39.9812, -75.1553], 13);
 const basemaps = {
+  'Light gray': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri' }),
   'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }),
   'Esri topographic': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' }),
   'Aerial': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }),
 };
-basemaps['OpenStreetMap'].addTo(map);
+basemaps['Light gray'].addTo(map);
 L.control.layers(basemaps, null, { position: 'topright' }).addTo(map);
 L.control.scale({ imperial: true, metric: false }).addTo(map);
 
