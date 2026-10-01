@@ -1729,8 +1729,12 @@ $('#slots').addEventListener('change', e => {
   if (!el) return;
   const key = el.closest('.slot').dataset.key, entry = state.layers[key];
   if (!entry) return;
-  if (el.dataset.act === 'toggle') {
+   if (el.dataset.act === 'toggle') {
     entry.visible = el.checked;
+    if (!entry.visible && key === 'outreach' && entry.leaflet._canvas) {
+      // leaflet.heat removes its canvas from overlayPane; put it back there first
+      map.getPanes().overlayPane.appendChild(entry.leaflet._canvas);
+    }
     if (entry.visible) entry.leaflet.addTo(map); else map.removeLayer(entry.leaflet);
     reorderRefLayers(); updateLabels(); renderLegend();
   }
