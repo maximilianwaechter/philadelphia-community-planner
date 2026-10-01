@@ -336,7 +336,9 @@ const SLOTS = [
   labelField: 'Campus',
   style: { color: C.police, fillOpacity: 0.035, lineOpacity: 0.95, weight: 2.2, dashArray: '7 5' }, help: 'Temple University police patrol boundary.' },
   { key: 'tuBuildings', title: 'TU Buildings', kind: 'area', url: 'data/TU_buildings.geojson', visible: true,
-    style: { color: C.cherry, fillOpacity: 0.24, lineOpacity: 1, weight: 0.7 }, help: 'Temple University building footprints.' },
+  labelField: 'PROPERTY_A',
+  labelFmt: v => String(v).replace(/\s+/g, ' ').trim(),
+  style: { color: C.cherry, fillOpacity: 0.24, lineOpacity: 1, weight: 0.7 }, help: 'Temple University building footprints.' },
   { key: 'tuStations', title: 'TU Police Stations', kind: 'point', url: 'data/TU_Police_Stations.geojson', visible: true,
     style: { color: C.cherry, fillOpacity: 1, radius: 6.5 }, help: 'Temple police/security locations.' },
   { key: 'policeStations', title: 'Philadelphia Police Stations', kind: 'point', url: 'data/Police_Stations.geojson', visible: true,
@@ -797,7 +799,6 @@ function pointStyle(slot) {
   return { pane: 'pointsPane', radius: s.radius ?? 5, color: '#fff', weight: 1.5, opacity: s.fillOpacity ?? 1, fillColor: s.color, fillOpacity: s.fillOpacity ?? 1 };
 }
 function slotPane(slot) {
-  if (slot.key === 'police') return { pane: 'policePane' };
   return { pane: 'refPane', renderer: refRenderer };
 }
 // Keep the shared canvas stacked in SLOTS order (later = on top = gets the click).
