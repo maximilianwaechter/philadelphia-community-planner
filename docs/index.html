@@ -156,13 +156,15 @@
   .map-legend .ends { display: flex; justify-content: space-between; color: var(--ink-2); }
   .history-ctl a { font-size: 17px; line-height: 30px; text-decoration: none; }
   .history-ctl a.disabled { color: #bbb; cursor: default; }
-  
-   /* Clicked SVG shapes: no bounding-box focus ring; thicken the real outline instead */
+
+  /* Clicked SVG shapes: no bounding-box focus ring; thicken the real outline instead */
   .leaflet-container path.leaflet-interactive:focus,
   .leaflet-container path.leaflet-interactive:focus-visible {
     outline: none;
     stroke-width: 4px;
   }
+  /* Light gray basemap: OpenStreetMap tiles desaturated */
+  .gray-tiles { filter: grayscale(1) brightness(1.08) contrast(0.85); }
 
   /* color picker */
   .picker { position: fixed; z-index: 3000; width: 256px; background: #fff; border: 1px solid var(--rule); border-radius: 9px; box-shadow: 0 10px 30px rgba(28, 36, 51, .22); padding: 12px 14px 14px; }
@@ -251,6 +253,8 @@
           </div>
           <label class="inline"><input type="checkbox" id="toggle-all-areas" checked> Show all planning polygons</label>
           <label class="inline"><input type="checkbox" id="toggle-edge-pan" checked> Move the map when the cursor reaches its edge while drawing</label>
+          <label class="inline"><input type="checkbox" id="toggle-vacant" checked> Show possibly vacant buildings in the selected area</label>
+          <p class="fieldnote" id="vacancy-status"></p>
         </div>
         <h2 class="section-title">Planning polygon legend</h2>
         <ul class="area-list" id="area-list"></ul>
@@ -333,12 +337,12 @@ const SLOTS = [
     visible: true, analyzeOnClick: true, labelField: 'code', labelFmt: v => `${v}`, zoomLabels: 11,
     style: { color: C.cherry, fillOpacity: 0.06, lineOpacity: 0.95, weight: 2.4 }, help: '19121, 19122, 19123, 19125, 19130, 19132, 19133 and 19140.' },
   { key: 'police', title: 'TU Police Boundary', kind: 'area', url: 'data/TU_police_boundary.geojson', visible: true, analyzeOnClick: true,
-  labelField: 'Campus',
-  style: { color: C.police, fillOpacity: 0.035, lineOpacity: 0.95, weight: 2.2, dashArray: '7 5' }, help: 'Temple University police patrol boundary.' },
+    labelField: 'Campus',
+    style: { color: C.police, fillOpacity: 0.035, lineOpacity: 0.95, weight: 2.2, dashArray: '7 5' }, help: 'Temple University police patrol boundary.' },
   { key: 'tuBuildings', title: 'TU Buildings', kind: 'area', url: 'data/TU_buildings.geojson', visible: true,
-  labelField: 'PROPERTY_A',
-  labelFmt: v => String(v).replace(/\s+/g, ' ').trim(),
-  style: { color: C.cherry, fillOpacity: 0.24, lineOpacity: 1, weight: 0.7 }, help: 'Temple University building footprints.' },
+    labelField: 'PROPERTY_A',
+    labelFmt: v => String(v).replace(/\s+/g, ' ').trim(),
+    style: { color: C.cherry, fillOpacity: 0.24, lineOpacity: 1, weight: 0.7 }, help: 'Temple University building footprints.' },
   { key: 'tuStations', title: 'TU Police Stations', kind: 'point', url: 'data/TU_Police_Stations.geojson', visible: true,
     style: { color: C.cherry, fillOpacity: 1, radius: 6.5 }, help: 'Temple police/security locations.' },
   { key: 'policeStations', title: 'Philadelphia Police Stations', kind: 'point', url: 'data/Police_Stations.geojson', visible: true,
@@ -620,7 +624,7 @@ L.Marker.mergeOptions({ autoPan: true, autoPanPadding: L.point(48, 48), autoPanS
 
 const map = L.map('map', { zoomControl: true }).setView([39.9812, -75.1553], 13);
 const basemaps = {
-  'Light gray': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri' }),
+  'Light gray': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'gray-tiles', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }),
   'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }),
   'Esri topographic': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' }),
   'Aerial': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }),
@@ -806,8 +810,9 @@ function slotPane(slot) {
 function reorderRefLayers() {
   for (const s of SLOTS) {
     const e = state.layers[s.key];
-    if (s.kind === 'area' && e && e.visible && e.leaflet && map.hasLayer(e.leaflet) && s.key !== 'police') e.leaflet.bringToFront();
+    if (s.kind === 'area' && e && e.visible && e.leaflet && map.hasLayer(e.leaflet)) e.leaflet.bringToFront();
   }
+  if (vacancy.geo && map.hasLayer(vacancy.group)) vacancy.geo.bringToFront();
 }
 
 function tipFor(slot, f) {
@@ -1011,6 +1016,119 @@ async function loadOutreachZips() {
     for (const r of rows) { const n = toNum(r.total); if (r.zip && Number.isFinite(n)) state.outreachByZip.set(String(r.zip).padStart(5, '0'), n); }
   } catch { /* optional file */ }
 }
+
+/* ---------- possibly vacant buildings (City VPI), loaded per selected polygon ---------- */
+const VACANT_URL = `${CITY_GIS}/Vacant_Indicators_Bldg/FeatureServer/0/query`;
+const VACANT_MAX_SQMI = 5;    // bigger selections get a count only, no footprints
+const VACANT_MIN_ZOOM = 15;   // footprints only draw at this zoom and closer
+const vacancy = { on: true, key: '', seq: 0, group: L.layerGroup(), geo: null, count: null, name: '', tooBig: false, error: '', text: '' };
+const vacantColor = r => (r >= 1 ? '#B42318' : r >= 0.83 ? '#E0531F' : r >= 0.67 ? '#E8922B' : '#E9C46A');
+
+function vacantParams(geometry, extra) {
+  // Esri wants clockwise outer rings; GeoJSON uses counterclockwise
+  const g = turf.rewind(feature(geometry), { reverse: true }).geometry;
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  const rings = polys.flatMap(p => p.map(r => r.map(([x, y]) => [+x.toFixed(6), +y.toFixed(6)])));
+  return new URLSearchParams({
+    where: '1=1', geometry: JSON.stringify({ rings, spatialReference: { wkid: 4326 } }),
+    geometryType: 'esriGeometryPolygon', inSR: '4326', spatialRel: 'esriSpatialRelIntersects', ...extra,
+  });
+}
+async function postVacant(params) {
+  const r = await fetch(VACANT_URL, { method: 'POST', body: params });   // POST: polygons can be too long for a URL
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message || 'query failed');
+  return j;
+}
+async function fetchVacantCount(geometry) {
+  const j = await postVacant(vacantParams(geometry, { returnCountOnly: 'true', f: 'json' }));
+  return j.count || 0;
+}
+async function fetchVacant(geometry) {
+  const feats = [];
+  for (let offset = 0, i = 0; i < 20; i++) {
+    const j = await postVacant(vacantParams(geometry, {
+      outFields: 'address,owner1,bldg_desc,build_rank,opa_id', outSR: '4326', f: 'geojson',
+      orderByFields: 'objectid', resultOffset: String(offset), resultRecordCount: '2000',
+    }));
+    const batch = j.features || [];
+    feats.push(...batch); offset += batch.length;
+    if (!batch.length || !(j.exceededTransferLimit || (j.properties && j.properties.exceededTransferLimit))) break;
+  }
+  return feats;
+}
+
+function vacantPopup(p) {
+  const opa = p.opa_id ? `<br><a href="https://property.phila.gov/?p=${encodeURIComponent(p.opa_id)}" target="_blank" rel="noopener">Property record (OPA ${esc(p.opa_id)})</a>` : '';
+  return `<strong>${esc(p.address || 'Unknown address')}</strong><br>${esc(p.bldg_desc || '')}<br>Vacancy rank: ${esc(p.build_rank)}${p.owner1 ? `<br>Owner: ${esc(p.owner1)}` : ''}${opa}`;
+}
+
+function vacancyMessage() {
+  if (!vacancy.on) return '';
+  if (vacancy.error) return `Couldn't load vacant buildings: ${vacancy.error}. Turn the checkbox off and on to retry.`;
+  if (!vacancy.key) return 'Select a planning polygon or map boundary to see possibly vacant buildings inside it.';
+  if (vacancy.count === null) return `Loading possibly vacant buildings in ${vacancy.name}…`;
+  const n = `${vacancy.count.toLocaleString()} possibly vacant building${vacancy.count === 1 ? '' : 's'} in ${vacancy.name}`;
+  if (vacancy.tooBig) return `${n}. The area is over ${VACANT_MAX_SQMI} sq mi, so they aren't drawn on the map.`;
+  if (vacancy.count && map.getZoom() < VACANT_MIN_ZOOM) return `${n}. Zoom in to see them on the map.`;
+  return vacancy.count ? `${n}. Click one for details.` : `${n}.`;
+}
+
+// Show or hide footprints for the current zoom and refresh both status lines.
+function syncVacancy() {
+  const show = vacancy.on && vacancy.geo && map.getZoom() >= VACANT_MIN_ZOOM;
+  if (show && !map.hasLayer(vacancy.group)) map.addLayer(vacancy.group);
+  if (!show && map.hasLayer(vacancy.group)) map.removeLayer(vacancy.group);
+  if (show) vacancy.geo.bringToFront();
+  vacancy.text = vacancyMessage();
+  const s = $('#vacancy-status'); if (s) s.textContent = vacancy.text;
+  const d = $('#vacancy-demo'); if (d) { d.textContent = vacancy.text; d.hidden = !vacancy.key || !vacancy.text; }
+}
+map.on('zoomend', syncVacancy);
+
+async function refreshVacancy() {
+  const sel = state.analysisSelection || {};
+  let geom = null, key = '', name = '';
+  if (vacancy.on && sel.type === 'plan') {
+    const a = state.plan.areas.find(x => x.id === sel.id);
+    if (a) { geom = a.geometry; key = `p${a.id}:${a.rev}`; name = a.name; }
+  } else if (vacancy.on && sel.type === 'reference' && sel.geometry) {
+    geom = sel.geometry; key = `r:${sel.name}`; name = sel.name;
+  }
+  if (key === vacancy.key) return;            // same selection and shape: nothing to fetch
+  Object.assign(vacancy, { key, name, count: null, tooBig: false, error: '', geo: null });
+  const seq = ++vacancy.seq;
+  vacancy.group.clearLayers();
+  syncVacancy();
+  if (!geom) return;
+  try {
+    vacancy.tooBig = turf.area(feature(geom)) / SQM_PER_SQMI > VACANT_MAX_SQMI;
+    if (vacancy.tooBig) {
+      const count = await fetchVacantCount(geom);
+      if (seq !== vacancy.seq) return;        // selection changed while loading
+      vacancy.count = count;
+    } else {
+      const feats = await fetchVacant(geom);
+      if (seq !== vacancy.seq) return;
+      vacancy.count = feats.length;
+      vacancy.geo = L.geoJSON({ type: 'FeatureCollection', features: feats }, {
+        pane: 'refPane', renderer: refRenderer, pmIgnore: true, snapIgnore: true,
+        style: f => ({ color: '#5A1A10', weight: 0.8, fillColor: vacantColor(f.properties.build_rank), fillOpacity: 0.75 }),
+        onEachFeature: (f, l) => {
+          l.bindTooltip(esc(f.properties.address || 'Possibly vacant building'), { sticky: true, className: 'ref-tip' });
+          l.bindPopup(() => vacantPopup(f.properties));
+        },
+      }).addTo(vacancy.group);
+    }
+  } catch (err) {
+    if (seq !== vacancy.seq) return;
+    vacancy.error = err.message || String(err);
+  }
+  syncVacancy();
+}
+
+$('#toggle-vacant').addEventListener('change', e => { vacancy.on = e.target.checked; vacancy.key = '__force__'; refreshVacancy(); });
 
 /* ------------------------------------------------------------------ *
  * Demographic model
@@ -1730,7 +1848,7 @@ $('#slots').addEventListener('change', e => {
   if (!el) return;
   const key = el.closest('.slot').dataset.key, entry = state.layers[key];
   if (!entry) return;
-   if (el.dataset.act === 'toggle') {
+  if (el.dataset.act === 'toggle') {
     entry.visible = el.checked;
     if (!entry.visible && key === 'outreach' && entry.leaflet._canvas) {
       // leaflet.heat removes its canvas from overlayPane; put it back there first
@@ -1834,6 +1952,7 @@ function analysisResult() {
 }
 
 function renderDemographics() {
+  refreshVacancy();
   const selectEl = $('#demo-scope');
   const cur = analysisResult();
   const refOption = state.analysisSelection.type === 'reference' ? `<option value="__reference__" selected>${esc(state.analysisSelection.name || 'Selected map polygon')}</option>` : '';
@@ -1841,7 +1960,8 @@ function renderDemographics() {
   const box = $('#demographics');
   if (!cur.r) { box.innerHTML = `<p class="empty">Add or load at least one planning polygon.</p>`; return; }
   const summary = cur.r.demo && cur.r.demo.buildingsUsed ? `${sqmi(cur.r.sqmi)} • ${cur.r.demo.buildingsUsed.toLocaleString()} residential building locations • ${cur.r.demo.tractsUsed.toLocaleString()} ACS tracts` : sqmi(cur.r.sqmi);
-  box.innerHTML = `<div class="details-head"><h2>${esc(cur.name)}</h2></div><p class="summary">${summary}</p>${statsBlock(cur.r)}
+  box.innerHTML = `<div class="details-head"><h2>${esc(cur.name)}</h2></div><p class="summary">${summary}</p>
+    <p class="summary" id="vacancy-demo" ${vacancy.key && vacancy.text ? '' : 'hidden'}>${esc(vacancy.text)}</p>${statsBlock(cur.r)}
     <p class="note">Household population is modeled building by building from ACS tract totals, OPA unit counts, vacancy, and owner and renter household sizes. Inside a polygon, person counts are split by modeled population, household counts by occupied units, and owner or renter counts by owner or renter units, so every tract still adds up to its ACS total. Percentages are recalculated from those counts; median income, rent and home value are household-weighted averages of tract medians. Outreach members are counted from ~250 m grid cells (a cell on the polygon edge counts by the share inside), so treat small-area counts as approximate; members recorded with only a ZIP code are not included.</p>
     <div class="row" style="margin-top:12px"><button class="btn quiet small" id="btn-csv">Download plan demographics (CSV)</button></div>`;
   $('#btn-csv').addEventListener('click', exportCSV);
