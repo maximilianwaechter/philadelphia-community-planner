@@ -156,6 +156,13 @@
   .map-legend .ends { display: flex; justify-content: space-between; color: var(--ink-2); }
   .history-ctl a { font-size: 17px; line-height: 30px; text-decoration: none; }
   .history-ctl a.disabled { color: #bbb; cursor: default; }
+  
+   /* Clicked SVG shapes: no bounding-box focus ring; thicken the real outline instead */
+  .leaflet-container path.leaflet-interactive:focus,
+  .leaflet-container path.leaflet-interactive:focus-visible {
+    outline: none;
+    stroke-width: 4px;
+  }
 
   /* color picker */
   .picker { position: fixed; z-index: 3000; width: 256px; background: #fff; border: 1px solid var(--rule); border-radius: 9px; box-shadow: 0 10px 30px rgba(28, 36, 51, .22); padding: 12px 14px 14px; }
