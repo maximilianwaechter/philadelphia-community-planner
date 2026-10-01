@@ -1019,7 +1019,7 @@ async function loadOutreachZips() {
 
 /* ---------- possibly vacant buildings (City VPI), loaded per selected polygon ---------- */
 const VACANT_URL = `${CITY_GIS}/Vacant_Indicators_Bldg/FeatureServer/0/query`;
-const VACANT_MAX_SQMI = 5;    // bigger selections get a count only, no footprints
+const VACANT_MAX_SQMI = Infinity;    // no limit
 const VACANT_MIN_ZOOM = 15;   // footprints only draw at this zoom and closer
 const vacancy = { on: true, key: '', seq: 0, group: L.layerGroup(), geo: null, count: null, name: '', tooBig: false, error: '', text: '' };
 const vacantColor = r => (r >= 1 ? '#B42318' : r >= 0.83 ? '#E0531F' : r >= 0.67 ? '#E8922B' : '#E9C46A');
