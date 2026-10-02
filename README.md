@@ -234,3 +234,26 @@ a private repo needs a paid GitHub plan.
 - Police stations: hover for the district, click for address and phone.
 - Outreach member heat map with a status filter (All, Active, Disengaged, and
   so on).
+- **Hide the side panel** to explore the map: the « Hide button, the ☰ / «
+  button at the top of the map, or the `[` key. The choice is remembered.
+- **Compare** any two areas: each side picks a source (planning polygons, the
+  whole plan, a loaded saved plan, or a boundary layer such as ZIP codes,
+  wards, voting divisions or NACs) and then the specific one. Plans are listed
+  first. A and B are outlined on the map while the tab is open.
+- **Neighborhood Advisory Committees**: NAC service areas (click for
+  demographics plus the NAC's coordinator and contact) and NAC office points.
+  Files: `docs/data/NeighborhoodAdvisoryCommittees.geojson` and
+  `docs/data/NAC_Offices.geojson`.
+- **Places of interest** (Layers tab, off by default): businesses, places of
+  worship, schools, health care, civic places and parks from OpenStreetMap,
+  shown at street zoom. Clicking one opens a place card with Directions,
+  Google Maps and Street View links. Right-click anywhere on the map for the
+  same Google links for that spot. No API key is needed.
+- **Street-centerline snapping** (Plan tab), using the City's live
+  `Street_Centerline` service:
+  - while drawing or editing at street zoom, corners snap to the dashed
+    centerlines (hold Alt to place a corner freely);
+  - finished polygons are rebuilt from whole street blocks: every block with
+    at least half its area inside is kept, so edges run down the middle of
+    streets and never split a row of houses. Undo returns to the hand-drawn
+    outline. The **Snap** button does the same for any existing polygon.

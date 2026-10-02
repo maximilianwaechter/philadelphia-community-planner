@@ -1,4 +1,38 @@
 <!doctype html>
+<!--
+  Philadelphia Community Area Planner
+  ===================================
+  A single-page Leaflet app for the community development office. Staff draw or
+  pick a polygon and the app reports modeled demographics for it: ACS tract
+  totals, distributed to individual residential buildings (see README.md for
+  the building model), then summed for whatever falls inside the polygon.
+
+  This file is self-contained: CSS in <style>, markup in <body>, and all app
+  code in one <script> at the bottom. GitHub Pages serves it from docs/, and
+  every data file it loads lives in docs/data/.
+
+  Code map (search for the numbered banners, e.g. "§7"):
+    §1  Configuration ........ file paths, colors, layer list (SLOTS), metric list
+    §2  Small helpers ........ DOM shortcuts, number parsing, color math, toasts
+    §3  File reading ......... GeoJSON / shapefile / KML / CSV -> WGS84 GeoJSON
+    §4  Map setup ............ basemaps, panes, draw tools, map controls
+    §5  Sidebar toggle ....... hide/show the side panel
+    §6  State ................ the one object that holds everything the app knows
+    §7  Undo / redo
+    §8  Edge panning ......... move the map while drawing near its edge
+    §9  Reference layers ..... boundary and point layers listed in SLOTS
+    §10 Places of interest ... OpenStreetMap POIs with Google-Maps-style popups
+    §11 Street centerlines ... snap-while-drawing and snap-to-whole-blocks
+    §12 Vacant buildings ..... City vacancy indicators for the selected area
+    §13 Demographic model .... load ACS tracts + building weights
+    §14 Analysis ............. polygon -> demographic numbers
+    §15 Plan areas ........... drawing, editing, removing planning polygons
+    §16 Saving and opening ... plan files, autosave, CSV export
+    §17 Color picker
+    §18 Rendering ............ tabs, layer list, plan list, demographics
+    §19 Compare .............. any plan polygon or boundary against any other
+    §20 Wiring and start-up
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -32,11 +66,20 @@
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
+  /* ---------- layout: side panel + map ---------- */
   .app { display: grid; grid-template-columns: minmax(340px, 410px) 1fr; height: 100%; }
   #map { height: 100%; background: #E9ECEF; }
   .leaflet-container { font-family: var(--font); }
 
-  .panel { background: var(--paper); border-right: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+  /* Collapsed side panel (see §5 in the script). The panel stays in the DOM so
+     its state (scroll position, open tab, form values) survives hiding it. */
+  .app.panel-collapsed { grid-template-columns: 0 1fr; }
+  .app.panel-collapsed .panel { visibility: hidden; overflow: hidden; border: 0; }
+  .panel-toggle a { font-size: 18px; line-height: 30px; text-decoration: none; font-weight: 700; }
+  .brand { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .brand .hide-panel { flex: none; margin-top: 2px; }
+
+  .panel { background: var(--paper); border-right: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .brand { padding: 18px 20px 10px; }
   .brand h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
   .brand p { margin: 2px 0 0; font-size: 13.5px; color: var(--ink-2); }
@@ -141,6 +184,37 @@
   .compare-controls label { font-size:12px; color:var(--ink-2); }
   .compare-controls select { width:100%; padding:5px; border:1px solid var(--rule); border-radius:5px; background:#fff; margin-top:3px; }
 
+  /* compare pickers: one card per side, each with a "source" and a "which one" dropdown */
+  .cmp-pick { margin: 8px 20px 0; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 7px; display: grid; gap: 6px; }
+  .cmp-pick .side { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13.5px; }
+  .cmp-pick .badge { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 12px; }
+  .cmp-pick label { font-size: 12px; color: var(--ink-2); display: grid; gap: 2px; }
+  .cmp-pick select { width: 100%; padding: 5px; border: 1px solid var(--rule); border-radius: 5px; background: #fff; }
+  .cmp-tools { padding: 8px 20px 0; }
+  .leaflet-tooltip.cmp-hl-tag { background: var(--ink); color: #fff; border: 0; border-radius: 50%; width: 22px; height: 22px; padding: 0; display: grid; place-items: center; font: 700 12px/1 var(--font); box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+  .leaflet-tooltip.cmp-hl-tag::before { display: none; }
+
+  /* contact card shown above demographics for layers that carry contact details (NACs) */
+  .info-card { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--rule); border-left: 3px solid var(--c, var(--focus)); border-radius: 6px; background: var(--panel); font-size: 13px; }
+  .info-card div + div { margin-top: 2px; }
+  .info-card a { color: var(--focus); }
+
+  /* places-of-interest popup, laid out like a Google Maps place card */
+  .leaflet-popup.poi-popup .leaflet-popup-content { margin: 0; width: 270px !important; }
+  .poi-card { padding: 12px 14px 10px; }
+  .poi-card .cat { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+  .poi-card .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .poi-card h3 { margin: 2px 0 6px; font-size: 16px; line-height: 1.25; }
+  .poi-card .line { display: grid; grid-template-columns: 18px 1fr; gap: 4px; font-size: 13px; margin-top: 4px; word-break: break-word; }
+  .poi-card .line span:first-child { color: var(--ink-2); text-align: center; }
+  .poi-card .actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .poi-card .actions a { flex: 1 1 auto; text-align: center; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 16px; font-size: 12.5px; font-weight: 600; color: var(--focus); text-decoration: none; white-space: nowrap; }
+  .poi-card .actions a:hover { background: #F4F8FC; border-color: var(--focus); }
+  .poi-card .src { margin-top: 8px; font-size: 11px; color: var(--ink-2); }
+  .poi-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-size: 12px; color: var(--ink-2); }
+  .poi-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .poi-legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
   /* map extras */
   .leaflet-tooltip.area-tag { background: transparent; border: 0; box-shadow: none; padding: 0; }
   .leaflet-tooltip.area-tag .tag { display: inline-block; border-radius: 3px; padding: 2px 7px; font: 600 12px/1.3 var(--font); box-shadow: 0 1px 2px rgba(28, 36, 51, .35); white-space: nowrap; }
@@ -156,6 +230,15 @@
   .map-legend .ends { display: flex; justify-content: space-between; color: var(--ink-2); }
   .history-ctl a { font-size: 17px; line-height: 30px; text-decoration: none; }
   .history-ctl a.disabled { color: #bbb; cursor: default; }
+
+  /* Clicked SVG shapes: no bounding-box focus ring; thicken the real outline instead */
+  .leaflet-container path.leaflet-interactive:focus,
+  .leaflet-container path.leaflet-interactive:focus-visible {
+    outline: none;
+    stroke-width: 4px;
+  }
+  /* Light gray basemap: OpenStreetMap tiles desaturated */
+  .gray-tiles { filter: grayscale(1) brightness(1.08) contrast(0.85); }
 
   /* color picker */
   .picker { position: fixed; z-index: 3000; width: 256px; background: #fff; border: 1px solid var(--rule); border-radius: 9px; box-shadow: 0 10px 30px rgba(28, 36, 51, .22); padding: 12px 14px 14px; }
@@ -181,9 +264,11 @@
 
   @media (max-width: 820px) {
     .app { grid-template-columns: 1fr; grid-template-rows: 46vh 1fr; }
+    .app.panel-collapsed { grid-template-columns: 1fr; grid-template-rows: 1fr 0; }
     #map { grid-row: 1; }
     .panel { grid-row: 2; border-right: 0; border-top: 1px solid var(--rule); }
-    .brand { display: none; }
+    .brand h1, .brand p { display: none; }
+    .brand { padding: 6px 12px 0; justify-content: flex-end; }
     .map-legend { font-size: 11px; line-height: 1.35; padding: 6px 8px; }
     #toasts { right: 12px; left: 12px; justify-items: stretch; }
   }
@@ -192,10 +277,13 @@
 </head>
 <body>
 <div class="app">
-  <aside class="panel" aria-label="Planner controls">
+  <aside class="panel" id="panel" aria-label="Planner controls">
     <header class="brand">
-      <h1>Philadelphia Community Area Planner</h1>
-      <p>Explore reference layers, edit planning areas, and compare modeled demographics.</p>
+      <div>
+        <h1>Philadelphia Community Area Planner</h1>
+        <p>Explore reference layers, edit planning areas, and compare modeled demographics.</p>
+      </div>
+      <button class="btn quiet small hide-panel" id="btn-hide-panel" title="Hide this panel to explore the map ( [ key )" aria-controls="panel" aria-expanded="true">« Hide</button>
     </header>
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button class="tab" role="tab" id="tab-data" aria-controls="panel-data" aria-selected="true">Layers</button>
@@ -205,7 +293,7 @@
     </nav>
     <div class="panels">
       <section class="tabpanel" id="panel-data" role="tabpanel" aria-labelledby="tab-data">
-        <p class="lead">Turn reference layers on and off, and use <strong>Style</strong> to change a layer's color and transparency. Click a council district, police district, ward, voting division or ZIP code to see its demographics.</p>
+        <p class="lead">Turn reference layers on and off, and use <strong>Style</strong> to change a layer's color and transparency. Click a council district, police district, ward, voting division, ZIP code or Neighborhood Advisory Committee area to see its demographics. Zoom in with <strong>Places of interest</strong> on to click businesses, churches, schools and services.</p>
         <div id="slots"></div>
         <h2 class="section-title">Demographic data sources</h2>
         <div id="demo-source-status" class="demo-status">Loading demographic sources…</div>
@@ -244,11 +332,16 @@
           </div>
           <label class="inline"><input type="checkbox" id="toggle-all-areas" checked> Show all planning polygons</label>
           <label class="inline"><input type="checkbox" id="toggle-edge-pan" checked> Move the map when the cursor reaches its edge while drawing</label>
+          <label class="inline"><input type="checkbox" id="toggle-street-snap" checked> Snap corners to street centerlines while drawing (zoom in to see them)</label>
+          <label class="inline"><input type="checkbox" id="toggle-block-snap" checked> Snap finished polygons to whole street blocks</label>
+          <p class="fieldnote" id="street-status"></p>
+          <label class="inline"><input type="checkbox" id="toggle-vacant" checked> Show possibly vacant buildings in the selected area</label>
+          <p class="fieldnote" id="vacancy-status"></p>
         </div>
         <h2 class="section-title">Planning polygon legend</h2>
         <ul class="area-list" id="area-list"></ul>
         <div id="plan-empty" class="empty"><strong>No areas yet.</strong> Draw one on the map, or import polygons of interest.</div>
-        <p class="note" style="padding:0 20px">Click a color square to change a polygon's color and transparency. <span class="area-badge new">new</span> and <span class="area-badge edited">edited</span> polygons are the ones <strong>Save changes</strong> writes to the file.</p>
+        <p class="note" style="padding:0 20px">Click a color square to change a polygon's color and transparency. <strong>Snap</strong> redraws a polygon along the street centerlines so it holds whole blocks (undo keeps your outline). <span class="area-badge new">new</span> and <span class="area-badge edited">edited</span> polygons are the ones <strong>Save changes</strong> writes to the file.</p>
       </section>
 
       <section class="tabpanel" id="panel-compare" role="tabpanel" aria-labelledby="tab-compare" hidden>
@@ -274,69 +367,127 @@
 (() => {
 'use strict';
 
-/* ------------------------------------------------------------------ *
- * Configuration
- * ------------------------------------------------------------------ */
-const ACCEPT = '.geojson,.json,.zip,.kml,.kmz,.csv';
-const STORE_KEY = 'phillyCommunityPlanner.plan.v4';
-const STYLE_KEY = 'phillyCommunityPlanner.layerStyles.v1';
+/* ================================================================== *
+ * §1  Configuration
+ *     Everything you are likely to change lives here: file paths,
+ *     colors, the reference-layer list (SLOTS) and the metric list.
+ * ================================================================== */
+const ACCEPT = '.geojson,.json,.zip,.kml,.kmz,.csv';            // file types the import dialogs accept
+const STORE_KEY = 'phillyCommunityPlanner.plan.v4';               // localStorage: autosaved plan
+const STYLE_KEY = 'phillyCommunityPlanner.layerStyles.v1';        // localStorage: layer colors/opacity
+const PANEL_KEY = 'phillyCommunityPlanner.panelCollapsed.v1';     // localStorage: side panel hidden?
 const SQM_PER_SQMI = 2589988.11;
 const BASE_PLAN_URL = 'data/Polygons_of_interest.geojson';
 const TRACT_CSV_URL = 'data/philly_tracts_acs2024.csv';
 const BUILDING_WEIGHTS_URL = 'data/building_weights_web.csv';
 const OUTREACH_ZIP_URL = 'data/outreach_by_zip.csv';
-const CITY_GIS = 'https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services';
+const CITY_GIS = 'https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services';   // City of Philadelphia ArcGIS Online
 const AREA_COLORS = ['#7B2CBF','#0072B2','#D55E00','#009E73','#E69F00','#CC79A7','#56B4E9','#8C564B','#4C78A8','#E45756','#59A14F','#B279A2'];
 const TEMPLE_PRIORITY_ZIPS = new Set(['19121', '19122', '19123', '19125', '19130', '19132', '19133', '19140']);
 // Names in the base polygon file that should display differently.
 const NAME_FIXES = { 'Line 1': 'CHOICE Neighborhood - North Central' };
 
+// Named colors used for the default layer symbology.
 const C = {
   plan: '#6B2C91', harbor: '#1F6F78', cherry: '#9D2235', police: '#27407A',
   amber: '#C98A1B', city: '#4E5968', council: '#6F7A8A', ward: '#5B4B8A', division: '#8A7FA8', zip: '#2F6F5E', heat: '#B42318',
+  nac: '#B5487D', street: '#5B6577',
 };
 
 const ordinal = n => { n = Number(n); const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
 const divisionLabel = v => { const s = String(v ?? '').padStart(4, '0'); return `Ward ${Number(s.slice(0, 2))}, Division ${Number(s.slice(2))}`; };
+const tidy = v => String(v ?? '').replace(/\s+/g, ' ').trim();
 
-// Static project layers (GitHub Pages serves these from ./data/).
-//   live:     City ArcGIS service used when the local file is missing
-//   labelFmt: text for hover tips and map labels
-//   zoomLabels: zoom level at which permanent labels appear
-//   style:    default symbology (Style button changes it; saved in plans)
+/**
+ * Contact lines for a Neighborhood Advisory Committee feature (polygon or office point).
+ * Both NAC files share the same field names. Returns HTML.
+ */
+function nacContactHtml(p) {
+  const web = tidy(p.WEBSITE_URL);
+  const href = web && (/^https?:\/\//i.test(web) ? web : `https://${web}`);
+  const lines = [
+    `<strong>${esc(tidy(p.ORGANIZATION) || 'Neighborhood Advisory Committee')}</strong>`,
+    tidy(p.STREET_ADDRESS) && `${esc(tidy(p.STREET_ADDRESS))}, Philadelphia, PA${p.ZIP_CODE ? ' ' + esc(p.ZIP_CODE) : ''}`,
+    tidy(p.NAC_COORDINATOR) && `Coordinator: ${esc(tidy(p.NAC_COORDINATOR))}`,
+    tidy(p.PHONE_NUMBER) && `Phone: <a href="tel:${esc(tidy(p.PHONE_NUMBER).replace(/[^\d+]/g, ''))}">${esc(tidy(p.PHONE_NUMBER))}</a>`,
+    tidy(p.EMAIL_ADDRESS) && `Email: <a href="mailto:${esc(tidy(p.EMAIL_ADDRESS))}">${esc(tidy(p.EMAIL_ADDRESS))}</a>`,
+    href && `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(web.replace(/^https?:\/\//i, '').replace(/\/$/, ''))}</a>`,
+  ];
+  return lines.filter(Boolean).map(l => `<div>${l}</div>`).join('');
+}
+
+/*
+ * Reference layers ("slots"), drawn bottom to top in this order.
+ * Static files are served by GitHub Pages from docs/data/.
+ *
+ *   key            unique id; also used for saved styles
+ *   kind           'area' (polygons), 'point', 'heat' (outreach heat map) or 'poi' (places of interest)
+ *   url            file in docs/data/ to load
+ *   live           City ArcGIS service to load instead if the local file is missing
+ *   optional       true = don't show an error toast if the file is missing
+ *   visible        shown when the app opens
+ *   analyzeOnClick clicking a polygon shows its demographics
+ *   compare        group name in the Compare tab's "source" dropdown (omit to leave out)
+ *   labelField     attribute used for hover tips, map labels and compare lists
+ *   labelFmt       turns the raw labelField value into display text
+ *   zoomLabels     zoom level at which permanent labels appear
+ *   popup(f)       HTML for a click popup (points)
+ *   infoCard(f)    HTML shown above the demographics when the polygon is clicked
+ *   style          default symbology (the Style button changes it; saved in plans)
+ */
 const SLOTS = [
+  /* ---- boundaries (polygons) ---- */
   { key: 'city', title: 'Philadelphia City Limits', kind: 'area', url: 'data/City_Limits.geojson', visible: true, analyzeOnClick: true,
+    compare: 'Boundaries', compareName: () => 'City of Philadelphia',
     style: { color: C.city, fillOpacity: 0, lineOpacity: 0.9, weight: 2 }, help: 'Official city boundary and default map extent.' },
   { key: 'council', title: 'Council Districts 2024', kind: 'area', url: 'data/Council_Districts_2024.geojson', visible: true, analyzeOnClick: true,
+    compare: 'Boundaries',
     style: { color: C.council, fillOpacity: 0.035, lineOpacity: 0.9, weight: 1.4 }, help: 'Click a district to calculate its demographics.' },
   { key: 'policeDistricts', title: 'Police Districts', kind: 'area', url: 'data/police_districts.geojson', live: 'Boundaries_District', optional: true,
-    visible: true, analyzeOnClick: true, labelField: 'dist_numc', labelFmt: v => `${ordinal(v)} District`, zoomLabels: 12,
+    visible: true, analyzeOnClick: true, compare: 'Boundaries', labelField: 'dist_numc', labelFmt: v => `${ordinal(v)} District`, zoomLabels: 12,
     style: { color: C.police, fillOpacity: 0, lineOpacity: 0.85, weight: 1.8, dashArray: '6 4' }, help: 'Philadelphia Police Department district boundaries.' },
   { key: 'wards', title: 'Political Wards', kind: 'area', url: 'data/political_wards.geojson', live: 'Political_Wards', optional: true,
-    visible: false, analyzeOnClick: true, labelField: 'ward_num', labelFmt: v => `Ward ${Number(v)}`, zoomLabels: 13,
+    visible: false, analyzeOnClick: true, compare: 'Boundaries', labelField: 'ward_num', labelFmt: v => `Ward ${Number(v)}`, zoomLabels: 13,
     style: { color: C.ward, fillOpacity: 0, lineOpacity: 0.85, weight: 1.6 }, help: 'The 66 voting wards.' },
   { key: 'divisions', title: 'Voting Divisions', kind: 'area', url: 'data/political_divisions.geojson', live: 'Political_Divisions', optional: true,
-    visible: false, analyzeOnClick: true, labelField: 'division_num', labelFmt: divisionLabel, zoomLabels: 16,
+    visible: false, analyzeOnClick: true, compare: 'Boundaries', labelField: 'division_num', labelFmt: divisionLabel, zoomLabels: 16,
     style: { color: C.division, fillOpacity: 0, lineOpacity: 0.7, weight: 0.8 }, help: 'Voting divisions (polling precincts) inside each ward.' },
   { key: 'zips', title: 'ZIP Codes', kind: 'area', url: 'data/zip_codes.geojson', live: 'Zipcodes_Poly', optional: true,
-    visible: false, analyzeOnClick: true, labelField: 'code', labelFmt: v => `${v}`, zoomLabels: 12,
+    visible: false, analyzeOnClick: true, compare: 'Boundaries', compareName: v => `ZIP ${v}`, labelField: 'code', labelFmt: v => `${v}`, zoomLabels: 12,
     style: { color: C.zip, fillOpacity: 0, lineOpacity: 0.8, weight: 1.4 }, help: 'All Philadelphia ZIP codes.' },
   { key: 'priorityZips', title: 'Temple Priority ZIP Codes', kind: 'area', url: 'data/zip_codes.geojson', live: 'Zipcodes_Poly', optional: true,
     filter: f => TEMPLE_PRIORITY_ZIPS.has(String((f.properties || {}).code)),
-    visible: true, analyzeOnClick: true, labelField: 'code', labelFmt: v => `${v}`, zoomLabels: 11,
+    visible: true, analyzeOnClick: true, compare: 'Boundaries', compareName: v => `ZIP ${v}`, labelField: 'code', labelFmt: v => `${v}`, zoomLabels: 11,
     style: { color: C.cherry, fillOpacity: 0.06, lineOpacity: 0.95, weight: 2.4 }, help: '19121, 19122, 19123, 19125, 19130, 19132, 19133 and 19140.' },
+  { key: 'nac', title: 'Neighborhood Advisory Committees', kind: 'area', url: 'data/NeighborhoodAdvisoryCommittees.geojson', optional: true,
+    visible: false, analyzeOnClick: true, compare: 'Community', labelField: 'ORGANIZATION', labelFmt: tidy, zoomLabels: 13,
+    infoCard: f => nacContactHtml(f.properties || {}),
+    style: { color: C.nac, fillOpacity: 0.05, lineOpacity: 0.9, weight: 1.8 }, help: 'Service areas of the City-funded NACs. Click one for its demographics and contact.' },
   { key: 'police', title: 'TU Police Boundary', kind: 'area', url: 'data/TU_police_boundary.geojson', visible: true, analyzeOnClick: true,
+    compare: 'Temple', labelField: 'Campus',
     style: { color: C.police, fillOpacity: 0.035, lineOpacity: 0.95, weight: 2.2, dashArray: '7 5' }, help: 'Temple University police patrol boundary.' },
   { key: 'tuBuildings', title: 'TU Buildings', kind: 'area', url: 'data/TU_buildings.geojson', visible: true,
+    labelField: 'PROPERTY_A', labelFmt: tidy,
     style: { color: C.cherry, fillOpacity: 0.24, lineOpacity: 1, weight: 0.7 }, help: 'Temple University building footprints.' },
+
+  /* ---- points ---- */
   { key: 'tuStations', title: 'TU Police Stations', kind: 'point', url: 'data/TU_Police_Stations.geojson', visible: true,
     style: { color: C.cherry, fillOpacity: 1, radius: 6.5 }, help: 'Temple police/security locations.' },
   { key: 'policeStations', title: 'Philadelphia Police Stations', kind: 'point', url: 'data/Police_Stations.geojson', visible: true,
+    popup: f => stationPopup(f),
     style: { color: C.police, fillOpacity: 1, radius: 6.5 }, help: 'Hover for the district; click for the address.' },
   { key: 'schools', title: 'Schools of Interest', kind: 'point', url: 'data/Schools_of_Interest.geojson', visible: true,
     style: { color: C.amber, fillOpacity: 1, radius: 5 }, help: 'Schools used as planning reference points.' },
+  { key: 'nacOffices', title: 'NAC Offices', kind: 'point', url: 'data/NAC_Offices.geojson', optional: true, visible: false,
+    labelField: 'ORGANIZATION', labelFmt: tidy, popup: f => nacContactHtml(f.properties || {}),
+    style: { color: C.nac, fillOpacity: 1, radius: 6 }, help: 'Neighborhood Advisory Committee offices. Click one for the coordinator and contact.' },
+
+  /* ---- live / derived layers ---- */
+  { key: 'poi', title: 'Places of interest', kind: 'poi', optional: true, visible: false,
+    style: { color: '#1A73E8', fillOpacity: 0.95, radius: 5.5 },
+    help: 'Businesses, places of worship, schools, health care and services from OpenStreetMap. Appears at street zoom; click a place for details and Google Maps links.' },
   { key: 'outreach', title: 'Outreach Members (heat map)', kind: 'heat', url: 'data/outreach_heat.csv', optional: true, visible: true,
-    style: { color: C.heat, fillOpacity: 0.8, radius: 24 }, help: 'Where program members live, grouped into ~250 m cells. Every polygon\u2019s demographics include a member count.' },
+    style: { color: C.heat, fillOpacity: 0.8, radius: 24 }, help: 'Where program members live, grouped into ~250 m cells. Every polygon’s demographics include a member count.' },
 ];
 
 // ACS count fields and the building weight used to split them inside a polygon.
@@ -396,9 +547,10 @@ proj4.defs('EPSG:2272', '+proj=lcc +lat_1=40.96666666666667 +lat_2=39.9333333333
 proj4.defs('EPSG:32129', '+proj=lcc +lat_1=40.96666666666667 +lat_2=39.93333333333333 +lat_0=39.33333333333334 +lon_0=-77.75 +x_0=600000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs');
 const CRS_NAMES = { 2272: 'PA State Plane South (feet)', 32129: 'PA State Plane South (meters)', 3857: 'Web Mercator' };
 
-/* ------------------------------------------------------------------ *
- * Small helpers
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §2  Small helpers
+ *     DOM shortcuts, HTML escaping, number parsing, colors, toasts, downloads.
+ * ================================================================== */
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -466,9 +618,11 @@ function inkFor(hex) {
 }
 const rgba = (hex, a) => { const c = hexToRgb(hex) || [0, 0, 0]; return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
 
-/* ------------------------------------------------------------------ *
- * Reading files into WGS84 GeoJSON
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §3  Reading files into WGS84 GeoJSON
+ *     Every import path ends in normalizeFC(), which also reprojects
+ *     PA State Plane / Web Mercator files to longitude-latitude.
+ * ================================================================== */
 function mapCoords(geom, fn) {
   const walk = c => (typeof c[0] === 'number' ? fn(c) : c.map(walk));
   return { type: geom.type, coordinates: walk(geom.coordinates) };
@@ -479,6 +633,7 @@ function firstCoord(geom) {
   return Array.isArray(c) ? c : null;
 }
 
+/** Detect a file's coordinate system: null for WGS84, or an EPSG code we can reproject. */
 function sourceCRS(fc) {
   const named = fc.crs && fc.crs.properties && fc.crs.properties.name;
   if (named && !/CRS84/i.test(named)) {
@@ -498,6 +653,10 @@ function sourceCRS(fc) {
   throw new Error('The coordinates in this file are in a projection the planner doesn’t recognize. Export it as WGS84 (EPSG:4326) and try again.');
 }
 
+/**
+ * Clean any FeatureCollection into WGS84 GeoJSON: splits GeometryCollections,
+ * drops empty or unsupported geometries and reprojects State Plane / Web Mercator.
+ */
 function normalizeFC(fc) {
   const out = [];
   for (const f of fc.features || []) {
@@ -574,6 +733,7 @@ function toFC(obj) {
   throw new Error('This JSON file isn’t GeoJSON. In ArcGIS Pro, use Features To JSON with "Output to GeoJSON" and "Project to WGS_1984" checked.');
 }
 
+/** Read a user-picked file (GeoJSON, zipped shapefile, KML/KMZ or CSV) into { fc, meta }. */
 async function readGeoFile(file) {
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   let raw = null, fc;
@@ -601,31 +761,90 @@ async function readGeoFile(file) {
   return { fc: norm, meta: raw && raw.planner ? raw.planner : null };
 }
 
-/* ------------------------------------------------------------------ *
- * Map
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §4  Map setup
+ *     Basemaps, drawing panes (z-order), Geoman draw tools, legend,
+ *     and the undo/redo buttons that sit on the map.
+ * ================================================================== */
 // Dragging a vertex near the map edge pans the map (Leaflet's built-in marker autopan;
 // Geoman's vertex handles are ordinary draggable markers).
 L.Marker.mergeOptions({ autoPan: true, autoPanPadding: L.point(48, 48), autoPanSpeed: 12 });
 
-const map = L.map('map', { zoomControl: true }).setView([39.9812, -75.1553], 13);
+const map = L.map('map', { zoomControl: false }).setView([39.9812, -75.1553], 13);
 const basemaps = {
+  'Light gray': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'gray-tiles', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }),
   'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }),
   'Esri topographic': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' }),
   'Aerial': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics' }),
 };
-basemaps['OpenStreetMap'].addTo(map);
+basemaps['Light gray'].addTo(map);
 L.control.layers(basemaps, null, { position: 'topright' }).addTo(map);
 L.control.scale({ imperial: true, metric: false }).addTo(map);
 
-[['refPane', 350], ['heatPane', 356], ['policePane', 380], ['comparePane', 390], ['labelsPane', 440], ['pointsPane', 450]]
-  .forEach(([name, z]) => { const p = map.createPane(name); p.style.zIndex = z; if (name === 'heatPane' || name === 'labelsPane') p.style.pointerEvents = 'none'; });
+// Panes control drawing order (higher zIndex = on top). Leaflet's defaults are
+// tilePane 200, overlayPane 400, markerPane 600, popupPane 700.
+[['refPane', 350], ['heatPane', 356], ['policePane', 380], ['streetPane', 385], ['comparePane', 390], ['highlightPane', 395], ['labelsPane', 440], ['pointsPane', 450], ['poiPane', 455]]
+  .forEach(([name, z]) => {
+    const p = map.createPane(name);
+    p.style.zIndex = z;
+    // Panes that only display things must not catch clicks meant for layers below.
+    if (['heatPane', 'labelsPane', 'streetPane', 'highlightPane'].includes(name)) p.style.pointerEvents = 'none';
+  });
 // All reference polygons share ONE canvas. Separate canvases in stacked panes would each
 // cover the whole map and swallow hover/click events meant for the layers underneath.
 const refRenderer = L.canvas({ pane: 'refPane', padding: 0.3, tolerance: 3 });
 
+/* ================================================================== *
+ * §5  Sidebar toggle
+ *     The side panel can be hidden to give the map the whole window.
+ *     Controls: the « Hide button in the panel header, the ☰ button at
+ *     the top of the map, and the [ key. The choice is remembered.
+ * ================================================================== */
+const PanelToggle = L.Control.extend({
+  options: { position: 'topleft' },
+  onAdd() {
+    const box = L.DomUtil.create('div', 'leaflet-bar panel-toggle');
+    box.innerHTML = '<a href="#" role="button" aria-controls="panel"></a>';
+    L.DomEvent.disableClickPropagation(box);
+    box.querySelector('a').addEventListener('click', e => { e.preventDefault(); setPanelCollapsed(!isPanelCollapsed()); });
+    return box;
+  },
+});
+new PanelToggle().addTo(map);
+L.control.zoom({ position: 'topleft' }).addTo(map);   // added after the toggle so the toggle sits on top
+
+const isPanelCollapsed = () => document.querySelector('.app').classList.contains('panel-collapsed');
+
+/**
+ * Hide or show the side panel and keep both toggle buttons in sync.
+ * Leaflet must be told the map container changed size, or tiles and
+ * click positions go wrong until the next window resize.
+ */
+function setPanelCollapsed(collapsed, { remember = true } = {}) {
+  document.querySelector('.app').classList.toggle('panel-collapsed', collapsed);
+  const mapBtn = document.querySelector('.panel-toggle a');
+  mapBtn.textContent = collapsed ? '☰' : '«';
+  mapBtn.title = collapsed ? 'Show the side panel ( [ )' : 'Hide the side panel ( [ )';
+  mapBtn.setAttribute('aria-label', mapBtn.title);
+  mapBtn.setAttribute('aria-expanded', String(!collapsed));
+  document.getElementById('btn-hide-panel').setAttribute('aria-expanded', String(!collapsed));
+  if (remember) { try { localStorage.setItem(PANEL_KEY, collapsed ? '1' : '0'); } catch { /* storage unavailable */ } }
+  requestAnimationFrame(() => map.invalidateSize({ pan: false }));
+}
+document.getElementById('btn-hide-panel').addEventListener('click', () => setPanelCollapsed(true));
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (e.key !== '[' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;   // typing a "[" in a field
+  setPanelCollapsed(!isPanelCollapsed());
+});
+setPanelCollapsed((() => { try { return localStorage.getItem(PANEL_KEY) === '1'; } catch { return false; } })(), { remember: false });
+
+/* ---------- Geoman drawing tools ---------- */
 map.pm.addControls({ position: 'topleft', drawMarker: false, drawCircleMarker: false, drawPolyline: false, drawCircle: false, drawText: false, rotateMode: false });
-map.pm.setGlobalOptions({ pathOptions: { color: C.plan, weight: 2.5, fillColor: C.plan, fillOpacity: 0.14 } });
+// snapDistance is in screen pixels: how close the cursor must be to a street or polygon edge to snap.
+map.pm.setGlobalOptions({ snapDistance: 14, pathOptions: { color: C.plan, weight: 2.5, fillColor: C.plan, fillOpacity: 0.14 } });
+/** True while any Geoman tool (draw, edit, drag, remove, cut) is active. */
 const pmBusy = () => map.pm.globalDrawModeEnabled() || map.pm.globalEditModeEnabled() || map.pm.globalDragModeEnabled()
   || map.pm.globalRemovalModeEnabled() || map.pm.globalCutModeEnabled();
 
@@ -646,33 +865,51 @@ const HistoryControl = L.Control.extend({
 });
 new HistoryControl().addTo(map);
 
-/* ------------------------------------------------------------------ *
- * State
- * ------------------------------------------------------------------ */
+/* Right-click anywhere: open that spot in Google Maps or Street View (no API key needed). */
+map.on('contextmenu', e => {
+  if (pmBusy()) return;
+  const { lat, lng } = e.latlng;
+  L.popup({ className: 'poi-popup' }).setLatLng(e.latlng).setContent(`<div class="poi-card">
+    <div class="cat">This spot</div><h3>${lat.toFixed(5)}, ${lng.toFixed(5)}</h3>
+    <div class="actions">${googleLinks(lat, lng, '')}</div></div>`).openOn(map);
+});
+
+/* ================================================================== *
+ * §6  State
+ *     The single object that holds everything the app knows. Leaflet
+ *     layers hang off these records so the UI can be rebuilt from state.
+ * ================================================================== */
 const state = {
-  layers: {},
-  layerStyles: {},
+  layers: {},          // key -> loaded reference layer (fc, leaflet layer, labels, visibility)
+  layerStyles: {},     // key -> style overrides from the Style button
   plan: { name: 'Untitled plan', areas: [], removedBase: new Set() },
   baseAreas: [],       // pristine copies of the base polygons
-  compare: null,
-  selected: null,
-  analysisSelection: { type: 'whole' },
+  compare: null,       // a saved plan loaded for comparison (shown dashed on the map)
+  compareA: { src: 'area', index: 0 },   // what each side of the Compare table shows (see §19)
+  compareB: { src: 'area', index: 1 },
+  compareShowOnMap: true,                // outline A and B on the map while the Compare tab is open
+  selected: null,      // id of the highlighted planning polygon
+  analysisSelection: { type: 'whole' },  // what the Demographics tab shows
   demographic: { ready: false, error: '' },
-  dataRev: 0,
+  dataRev: 0,          // bumps when demographic data reloads, invalidating cached stats
   tractFields: { counts: [], medians: [] },
   outreachByZip: new Map(),
 };
 let nextId = 1, revCounter = 1;
+// Analysis results keyed by "what|revision|dataRev", so unchanged polygons are never re-analyzed.
 const statsCache = new Map();
 
 try { state.layerStyles = JSON.parse(localStorage.getItem(STYLE_KEY) || '{}') || {}; } catch { state.layerStyles = {}; }
 const saveLayerStyles = () => { try { localStorage.setItem(STYLE_KEY, JSON.stringify(state.layerStyles)); } catch { /* ignore */ } };
 const styleOf = slot => ({ ...slot.style, ...(state.layerStyles[slot.key] || {}) });
 
-/* ------------------------------------------------------------------ *
- * Undo / redo
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §7  Undo / redo
+ *     History is a stack of JSON snapshots of the plan (names, shapes,
+ *     colors). Visibility toggles are deliberately not undoable.
+ * ================================================================== */
 const history = { past: [], future: [], current: null, limit: 150 };
+/** Serialize the plan (everything undo should restore) to a JSON string. */
 function snapshot() {
   return JSON.stringify({
     name: state.plan.name,
@@ -681,6 +918,7 @@ function snapshot() {
       lineOpacity: a.lineOpacity, origin: a.origin, baseKey: a.baseKey, dirty: a.dirty })),
   });
 }
+/** Record the current plan as one undo step. Call after every user-visible change. */
 function commit() {
   const s = snapshot();
   if (s === history.current) return;
@@ -690,6 +928,7 @@ function commit() {
   updateHistoryButtons(); autosave();
 }
 function resetHistory() { history.past = []; history.future = []; history.current = snapshot(); updateHistoryButtons(); }
+/** Rebuild the plan and its map layers from a snapshot string (undo/redo). */
 function restore(s) {
   const snap = JSON.parse(s);
   const vis = new Map(state.plan.areas.map(a => [a.id, a.visible]));
@@ -734,9 +973,10 @@ document.addEventListener('keydown', e => {
   else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
 });
 
-/* ------------------------------------------------------------------ *
- * Move the map when the cursor reaches its edge while drawing
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §8  Edge panning
+ *     Move the map when the cursor reaches its edge while drawing.
+ * ================================================================== */
 const edgePan = { raf: 0, vx: 0, vy: 0, pt: null, orig: null, enabled: true };
 const EDGE_PX = 44, EDGE_MAX_SPEED = 14;
 function edgeStep() {
@@ -761,9 +1001,11 @@ map.getContainer().addEventListener('mousemove', e => {
 });
 map.getContainer().addEventListener('mouseleave', () => { edgePan.vx = edgePan.vy = 0; });
 
-/* ------------------------------------------------------------------ *
- * Reference layers
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §9  Reference layers
+ *     Loads every SLOTS entry, draws it, labels it, and makes boundary
+ *     polygons clickable for demographics.
+ * ================================================================== */
 function guessLabelField(fc, key) {
   const props = fc.features[0] ? Object.keys(fc.features[0].properties || {}) : [];
   const prefs = {
@@ -789,15 +1031,15 @@ function pointStyle(slot) {
   return { pane: 'pointsPane', radius: s.radius ?? 5, color: '#fff', weight: 1.5, opacity: s.fillOpacity ?? 1, fillColor: s.color, fillOpacity: s.fillOpacity ?? 1 };
 }
 function slotPane(slot) {
-  if (slot.key === 'police') return { pane: 'policePane' };
   return { pane: 'refPane', renderer: refRenderer };
 }
 // Keep the shared canvas stacked in SLOTS order (later = on top = gets the click).
 function reorderRefLayers() {
   for (const s of SLOTS) {
     const e = state.layers[s.key];
-    if (s.kind === 'area' && e && e.visible && e.leaflet && map.hasLayer(e.leaflet) && s.key !== 'police') e.leaflet.bringToFront();
+    if (s.kind === 'area' && e && e.visible && e.leaflet && map.hasLayer(e.leaflet)) e.leaflet.bringToFront();
   }
+  if (vacancy.geo && map.hasLayer(vacancy.group)) vacancy.geo.bringToFront();
 }
 
 function tipFor(slot, f) {
@@ -821,6 +1063,11 @@ function stationPopup(f) {
   return `<strong>${esc(ordinal(p.dist_num))} Police District</strong><br>${esc(p.location || '')}, Philadelphia, PA${phone ? `<br>Phone: <a href="tel:${esc(phone)}">${esc(phone)}</a>` : ''}`;
 }
 
+/**
+ * Build the Leaflet layer for one SLOTS entry: styling, hover tips, click
+ * popups (points with slot.popup) and click-for-demographics (polygons with
+ * slot.analyzeOnClick).
+ */
 function buildLeaflet(slot, entry) {
   const pane = slotPane(slot);
   return L.geoJSON(entry.fc, {
@@ -831,18 +1078,24 @@ function buildLeaflet(slot, entry) {
     pointToLayer: (f, ll) => L.circleMarker(ll, { ...pointStyle(slot), pmIgnore: true, snapIgnore: true }),
     onEachFeature: (f, l) => {
       l.bindTooltip(() => tipFor(slot, f), { sticky: slot.kind !== 'point', direction: 'top', className: 'ref-tip' });
-      if (slot.key === 'policeStations') l.bindPopup(() => stationPopup(f));
+      if (slot.popup) l.bindPopup(() => slot.popup(f));
       if (slot.analyzeOnClick && isPoly(f.geometry)) {
         l.on('click', () => {
           if (pmBusy()) return;   // never interrupt drawing or editing
-          const name = labelOf(slot, f, entry.labelField) || slot.title.replace(/s$/, '');
-          const isZip = slot.key === 'zips' || slot.key === 'priorityZips';
-          state.analysisSelection = { type: 'reference', name: isZip ? `ZIP ${name}` : name, geometry: f.geometry };
+          state.analysisSelection = { type: 'reference', name: featureName(slot, f, entry), geometry: f.geometry,
+            info: slot.infoCard ? slot.infoCard(f) : '', color: styleOf(slot).color };
           renderDemographics(); showTab('demographics');
         });
       }
     },
   });
+}
+
+/** Display name for a boundary feature, e.g. "ZIP 19122" or "14th District". */
+function featureName(slot, f, entry = state.layers[slot.key]) {
+  const raw = entry && entry.labelField ? (f.properties || {})[entry.labelField] : '';
+  if (slot.compareName && raw !== undefined && raw !== null && raw !== '') return slot.compareName(raw);
+  return labelOf(slot, f, entry && entry.labelField) || slot.title.replace(/s$/, '');
 }
 
 function labelPoints(slot, fc, field) {
@@ -871,6 +1124,7 @@ function updateLabels() {
 }
 map.on('zoomend moveend', updateLabels);
 
+/** Put loaded data into a SLOTS layer: draw it, prepare its labels, refresh the Layers tab. */
 function setSlot(key, fc, fileName) {
   const slot = SLOTS.find(s => s.key === key);
   const old = state.layers[key];
@@ -886,10 +1140,12 @@ function setSlot(key, fc, fileName) {
   renderSlots(); updateLabels();
 }
 
+/** Re-apply a layer's style after the Style picker changes it. */
 function applySlotStyle(key) {
   const slot = SLOTS.find(s => s.key === key), e = state.layers[key];
   if (!e) return;
   if (slot.kind === 'heat') { styleHeat(e, slot); renderLegend(); return; }
+  if (slot.kind === 'poi') { drawPoi(); return; }
   const s = styleOf(slot);
   e.leaflet.eachLayer(l => {
     if (l instanceof L.CircleMarker) { l.setStyle({ fillColor: s.color, fillOpacity: s.fillOpacity, opacity: s.fillOpacity }); l.setRadius(s.radius ?? 5); }
@@ -916,6 +1172,7 @@ async function fetchArcgis(service) {
   }
   return { type: 'FeatureCollection', features: feats };
 }
+/** Load a layer's local file (or its live City service as a fallback). Cached by URL, so two slots can share one file. */
 function loadGeo(slot) {
   const k = slot.url;
   if (!geoCache.has(k)) {
@@ -932,6 +1189,7 @@ function loadGeo(slot) {
 }
 
 /* ---------- outreach heat map ---------- */
+/** Load the outreach heat-map grid (privacy-safe ~250 m cells made by scripts/05). */
 async function loadHeat(slot) {
   const rows = (await fetchCsvRows(slot.url)).map(r => {
     const o = {}; for (const [k, v] of Object.entries(r)) o[k] = toNum(v);
@@ -978,10 +1236,12 @@ function renderLegend() {
   el.innerHTML = `<strong>Outreach members · ${esc(lbl)}</strong><div class="ramp" style="background:linear-gradient(90deg, ${rgba(c, 0.15)}, ${rgba(c, 0.7)}, ${c})"></div><div class="ends"><span>Fewer</span><span>More</span></div>`;
 }
 
+/** Load every SLOTS layer in parallel; a missing optional file is not an error. */
 async function loadBaseLayers() {
   await Promise.all(SLOTS.map(async slot => {
     try {
       if (slot.kind === 'heat') { await loadHeat(slot); return; }
+      if (slot.kind === 'poi') { initPoi(slot); return; }       // loads on demand as the map moves
       const { fc, from } = await loadGeo(slot);
       setSlot(slot.key, fc, from);
     } catch (err) {
@@ -1002,9 +1262,454 @@ async function loadOutreachZips() {
   } catch { /* optional file */ }
 }
 
-/* ------------------------------------------------------------------ *
- * Demographic model
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §10 Places of interest
+ *     Businesses, places of worship, schools, health care and civic
+ *     places from OpenStreetMap (Overpass API: free, no key). Each one
+ *     opens a Google-Maps-style card with Directions / Google Maps /
+ *     Street View links. Google's own place data needs a paid Places API
+ *     key, so the links hand off to Google instead of embedding it.
+ *
+ *     Places load in ~1 km tiles once the map is zoomed to street level,
+ *     are cached for the session, and only those in view are drawn.
+ * ================================================================== */
+const OVERPASS_URLS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
+const POI_MIN_ZOOM = 16;      // closer than this would mean thousands of markers
+const POI_TILE = 0.01;        // tile size in degrees (~1.1 km x 0.85 km in Philadelphia)
+
+// Categories, checked in order; the first match wins. t = the place's OSM tags.
+const POI_CATEGORIES = [
+  { id: 'food', label: 'Food & drink', color: '#E8710A', match: t => /^(restaurant|cafe|fast_food|bar|pub|ice_cream|food_court)$/.test(t.amenity) },
+  { id: 'grocery', label: 'Groceries & markets', color: '#9E6A03', match: t => /^(supermarket|convenience|greengrocer|bakery|butcher|deli|grocery|farm)$/.test(t.shop) || t.amenity === 'marketplace' },
+  { id: 'worship', label: 'Places of worship', color: '#8430CE', match: t => t.amenity === 'place_of_worship' },
+  { id: 'education', label: 'Schools & childcare', color: '#C5221F', match: t => /^(school|kindergarten|childcare|college|university)$/.test(t.amenity) },
+  { id: 'health', label: 'Health care', color: '#D01884', match: t => /^(clinic|doctors|dentist|pharmacy|hospital)$/.test(t.amenity) || t.shop === 'chemist' },
+  { id: 'civic', label: 'Community & civic', color: '#1A73E8', match: t => /^(community_centre|social_centre|social_facility|library|townhall|post_office|police|fire_station|food_bank|arts_centre)$/.test(t.amenity) || /^(ngo|association|government)$/.test(t.office) },
+  { id: 'parks', label: 'Parks & recreation', color: '#188038', match: t => /^(park|playground|sports_centre|fitness_centre|recreation_ground)$/.test(t.leisure) },
+  { id: 'shops', label: 'Other shops & services', color: '#5F6368', match: t => !!t.shop || /^(bank|laundry)$/.test(t.amenity) },
+];
+const poiCategory = tags => POI_CATEGORIES.find(c => c.match(tags)) || POI_CATEGORIES[POI_CATEGORIES.length - 1];
+
+/** Overpass QL for every named place of the kinds above inside one bounding box (south, west, north, east). */
+function overpassQuery([s, w, n, e]) {
+  const bb = `${s},${w},${n},${e}`;
+  return `[out:json][timeout:25];(
+    nwr["amenity"~"^(restaurant|cafe|fast_food|bar|pub|ice_cream|food_court|marketplace|place_of_worship|school|kindergarten|childcare|college|university|clinic|doctors|dentist|pharmacy|hospital|community_centre|social_centre|social_facility|library|townhall|post_office|police|fire_station|food_bank|arts_centre|bank)$"]["name"](${bb});
+    nwr["shop"]["name"](${bb});
+    nwr["leisure"~"^(park|playground|sports_centre|fitness_centre|recreation_ground)$"]["name"](${bb});
+    nwr["office"~"^(ngo|association|government)$"]["name"](${bb});
+  );out center tags;`;
+}
+
+/** Google Maps hand-off links. These are public URL schemes, so no API key is involved. */
+function googleLinks(lat, lng, name, address) {
+  const where = name ? `${name}, ${address || `${lat.toFixed(6)},${lng.toFixed(6)}`}` : `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  const q = encodeURIComponent(where);
+  return `<a href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">Directions</a>`
+    + `<a href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">Google Maps</a>`
+    + `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" rel="noopener">Street View</a>`;
+}
+
+const humanize = v => String(v || '').replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+
+/** The place card shown when a place of interest is clicked. */
+function poiPopup(p) {
+  const t = p.tags, cat = poiCategory(t);
+  const kind = humanize(t.amenity || t.shop || t.leisure || t.office);
+  const extra = [t.religion && humanize(t.denomination || t.religion), t.cuisine && humanize(t.cuisine.split(';')[0])].filter(Boolean).join(' · ');
+  const street = [t['addr:housenumber'], t['addr:street']].filter(Boolean).join(' ');
+  const address = street ? `${street}, ${t['addr:city'] || 'Philadelphia'}, PA${t['addr:postcode'] ? ' ' + t['addr:postcode'] : ''}` : '';
+  const phone = t.phone || t['contact:phone'];
+  const web = t.website || t['contact:website'];
+  const line = (icon, html) => `<div class="line"><span aria-hidden="true">${icon}</span><span>${html}</span></div>`;
+  return `<div class="poi-card">
+    <div class="cat"><span class="dot" style="background:${cat.color}"></span>${esc(kind)}${extra ? ` · ${esc(extra)}` : ''}</div>
+    <h3>${esc(t.name)}</h3>
+    ${address ? line('⌖', esc(address)) : ''}
+    ${t.opening_hours ? line('◷', esc(t.opening_hours.replace(/;\s*/g, '; '))) : ''}
+    ${phone ? line('☏', `<a href="tel:${esc(phone.replace(/[^\d+]/g, ''))}">${esc(phone)}</a>`) : ''}
+    ${web ? line('↗', `<a href="${esc(/^https?:/i.test(web) ? web : 'https://' + web)}" target="_blank" rel="noopener">${esc(web.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, ''))}</a>`) : ''}
+    ${t.wheelchair === 'yes' ? line('♿', 'Wheelchair accessible') : ''}
+    <div class="actions">${googleLinks(p.lat, p.lon, t.name, address)}</div>
+    <div class="src">Place data © OpenStreetMap contributors · <a href="https://www.openstreetmap.org/${p.type}/${p.id}" target="_blank" rel="noopener">edit</a></div>
+  </div>`;
+}
+
+/** Create the (empty) places layer entry; markers arrive as the map moves. */
+function initPoi(slot) {
+  state.layers[slot.key] = {
+    poi: true, visible: slot.visible !== false, leaflet: L.layerGroup(), category: 'all',
+    places: new Map(),      // "type/id" -> { type, id, lat, lon, tags }
+    tiles: new Set(),       // tile keys already loaded
+    inView: 0, status: '', loading: false, seq: 0,
+  };
+  if (state.layers[slot.key].visible) state.layers[slot.key].leaflet.addTo(map);
+}
+
+/** Load any missing tiles for the current view, then redraw. Called after every map move. */
+async function refreshPoi() {
+  const e = state.layers.poi;
+  if (!e) return;
+  if (!e.visible) { e.leaflet.clearLayers(); return; }
+  if (map.getZoom() < POI_MIN_ZOOM) {
+    e.leaflet.clearLayers(); e.inView = 0;
+    e.status = 'Zoom in to street level to see places.';
+    renderPoiStatus(); return;
+  }
+  const b = map.getBounds();
+  const x0 = Math.floor(b.getWest() / POI_TILE), x1 = Math.floor(b.getEast() / POI_TILE);
+  const y0 = Math.floor(b.getSouth() / POI_TILE), y1 = Math.floor(b.getNorth() / POI_TILE);
+  const missing = [];
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) if (!e.tiles.has(`${x},${y}`)) missing.push([x, y]);
+  if (missing.length) {
+    // One request covering every missing tile (Overpass asks clients not to send many small ones).
+    const xs = missing.map(m => m[0]), ys = missing.map(m => m[1]);
+    const bbox = [Math.min(...ys) * POI_TILE, Math.min(...xs) * POI_TILE, (Math.max(...ys) + 1) * POI_TILE, (Math.max(...xs) + 1) * POI_TILE];
+    const seq = ++e.seq;
+    e.loading = true; e.status = 'Loading places…'; renderPoiStatus();
+    try {
+      const elements = await fetchOverpass(overpassQuery(bbox));
+      for (const el of elements) {
+        const lat = el.lat ?? (el.center && el.center.lat), lon = el.lon ?? (el.center && el.center.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon) || !el.tags || !el.tags.name) continue;
+        e.places.set(`${el.type}/${el.id}`, { type: el.type, id: el.id, lat, lon, tags: el.tags });
+      }
+      missing.forEach(([x, y]) => e.tiles.add(`${x},${y}`));
+      e.status = '';
+    } catch (err) {
+      console.warn('Places of interest failed to load', err);
+      if (seq === e.seq) e.status = `Couldn't load places (${err.message}). Move the map to try again.`;
+    }
+    e.loading = false;
+  }
+  drawPoi();
+}
+
+/** POST a query to Overpass, falling back to a mirror if the main server is busy. */
+async function fetchOverpass(query) {
+  let lastErr;
+  for (const url of OVERPASS_URLS) {
+    try {
+      const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(query), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      return (await r.json()).elements || [];
+    } catch (err) { lastErr = err; }
+  }
+  throw lastErr;
+}
+
+/** Draw markers for cached places that are in view and match the category filter. */
+function drawPoi() {
+  const e = state.layers.poi, slot = SLOTS.find(s => s.key === 'poi');
+  if (!e) return;
+  e.leaflet.clearLayers();
+  if (!e.visible || map.getZoom() < POI_MIN_ZOOM) { renderPoiStatus(); return; }
+  const b = map.getBounds().pad(0.15), st = styleOf(slot);
+  let n = 0;
+  for (const p of e.places.values()) {
+    if (!b.contains([p.lat, p.lon])) continue;
+    const cat = poiCategory(p.tags);
+    if (e.category !== 'all' && cat.id !== e.category) continue;
+    n++;
+    L.circleMarker([p.lat, p.lon], {
+      pane: 'poiPane', pmIgnore: true, snapIgnore: true,
+      radius: st.radius ?? 5.5, color: '#fff', weight: 1.5, opacity: st.fillOpacity ?? 0.95, fillColor: cat.color, fillOpacity: st.fillOpacity ?? 0.95,
+    }).bindTooltip(esc(p.tags.name), { direction: 'top', className: 'ref-tip' })
+      .bindPopup(() => poiPopup(p), { className: 'poi-popup', maxWidth: 300 })
+      .addTo(e.leaflet);
+  }
+  e.inView = n;
+  renderPoiStatus();
+}
+
+/** Update just the status line in the Places slot (re-rendering the whole list would close dropdowns). */
+function renderPoiStatus() {
+  const el = document.querySelector('.slot[data-key="poi"] .status');
+  if (el) el.innerHTML = poiStatusHtml();
+}
+function poiStatusHtml() {
+  const e = state.layers.poi;
+  if (!e) return '';
+  if (!e.visible) return 'Turn on to see places at street zoom.';
+  if (e.status) return esc(e.status);
+  return `<strong>${e.inView.toLocaleString()}</strong> place${e.inView === 1 ? '' : 's'} in view`;
+}
+
+let poiTimer = null;
+map.on('moveend', () => { clearTimeout(poiTimer); poiTimer = setTimeout(refreshPoi, 450); });
+
+/* ================================================================== *
+ * §11 Street centerlines
+ *     Planning areas are meant to hold households, so their edges
+ *     should run down the middle of streets, not through houses. Two
+ *     tools use the City's Street_Centerline layer for that:
+ *
+ *     1. Snap while drawing: at street zoom, centerlines are drawn
+ *        faintly and Geoman snaps corners to them (hold Alt to place a
+ *        corner freely).
+ *     2. Snap to whole blocks: the centerlines are turned into block
+ *        polygons (turf.polygonize; each block is the area enclosed by
+ *        its surrounding streets), every block with at least half its
+ *        area inside the drawn polygon is kept, and the kept blocks are
+ *        dissolved into the new outline.
+ * ================================================================== */
+const STREET_URL = `${CITY_GIS}/Street_Centerline/FeatureServer/0/query`;
+const STREET_TILE = 0.01;          // tile size in degrees for caching centerline requests
+const STREET_MIN_ZOOM = 16;        // centerlines appear for snapping at this zoom and closer
+const BLOCK_SHARE = 0.5;           // a block joins the polygon when this share of its area is inside
+const BLOCK_BUFFER_KM = 0.4;       // fetch streets this far beyond the polygon so edge blocks close
+const BLOCK_MAX_SQMI = 25;         // larger polygons are refused (it would download most of the city)
+
+const streets = {
+  snapOn: true, blockOn: true,
+  tiles: new Map(),                // tile key -> Promise<GeoJSON line features>
+  group: L.layerGroup(),           // the faint centerlines shown while drawing
+  shownKey: '', status: '',
+};
+
+/** Fetch one tile of centerlines (cached). Large tiles are paged 2,000 segments at a time. */
+function streetTile(x, y) {
+  const key = `${x},${y}`;
+  if (!streets.tiles.has(key)) {
+    const p = (async () => {
+      const env = { xmin: x * STREET_TILE, ymin: y * STREET_TILE, xmax: (x + 1) * STREET_TILE, ymax: (y + 1) * STREET_TILE, spatialReference: { wkid: 4326 } };
+      const feats = [];
+      for (let offset = 0, i = 0; i < 10; i++) {
+        const params = new URLSearchParams({
+          where: '1=1', geometry: JSON.stringify(env), geometryType: 'esriGeometryEnvelope', inSR: '4326',
+          spatialRel: 'esriSpatialRelIntersects', outFields: 'objectid,stname,class', outSR: '4326', f: 'geojson',
+          orderByFields: 'objectid', resultOffset: String(offset), resultRecordCount: '2000',
+        });
+        const j = await fetchJSON(`${STREET_URL}?${params}`);
+        const batch = (j.features || []).filter(f => f.geometry && /LineString/.test(f.geometry.type));
+        feats.push(...batch); offset += (j.features || []).length;
+        if (!(j.features || []).length || !(j.exceededTransferLimit || (j.properties && j.properties.exceededTransferLimit))) break;
+      }
+      return feats;
+    })();
+    p.catch(() => streets.tiles.delete(key));   // let a failed tile be retried later
+    streets.tiles.set(key, p);
+  }
+  return streets.tiles.get(key);
+}
+
+/** All centerline segments touching a bounding box [w, s, e, n], each segment once. */
+async function streetsIn(bb) {
+  const jobs = [];
+  for (let x = Math.floor(bb[0] / STREET_TILE); x <= Math.floor(bb[2] / STREET_TILE); x++)
+    for (let y = Math.floor(bb[1] / STREET_TILE); y <= Math.floor(bb[3] / STREET_TILE); y++) jobs.push([x, y]);
+  // At most 6 requests at a time so a big polygon doesn't flood the City's server.
+  const results = [];
+  for (let i = 0; i < jobs.length; i += 6) results.push(...await Promise.all(jobs.slice(i, i + 6).map(([x, y]) => streetTile(x, y))));
+  const byId = new Map();
+  for (const f of results.flat()) byId.set(f.id ?? (f.properties || {}).objectid ?? JSON.stringify(f.geometry.coordinates[0]), f);
+  return [...byId.values()];
+}
+
+/** Show (or hide) the faint snapping centerlines for the current view. */
+async function refreshStreetSnap() {
+  const active = streets.snapOn && (map.pm.globalDrawModeEnabled() || map.pm.globalEditModeEnabled() || map.pm.globalCutModeEnabled());
+  if (!active || map.getZoom() < STREET_MIN_ZOOM) {
+    streets.group.clearLayers(); streets.shownKey = '';
+    if (map.hasLayer(streets.group)) map.removeLayer(streets.group);
+    setStreetStatus(active ? 'Zoom in to street level to snap corners to street centerlines.' : '');
+    return;
+  }
+  const b = map.getBounds().pad(0.25), bb = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  const key = bb.map(v => v.toFixed(3)).join(',');
+  if (key === streets.shownKey) return;
+  streets.shownKey = key;
+  try {
+    const lines = await streetsIn(bb);
+    if (streets.shownKey !== key) return;                     // the map moved on while loading
+    streets.group.clearLayers();
+    // snapIgnore:false is what makes Geoman snap to these even though pmIgnore keeps them uneditable.
+    L.geoJSON({ type: 'FeatureCollection', features: lines }, {
+      pane: 'streetPane', interactive: false, pmIgnore: true, snapIgnore: false,
+      style: { color: C.street, weight: 1.6, opacity: 0.8, dashArray: '3 3' },
+    }).addTo(streets.group);
+    if (!map.hasLayer(streets.group)) map.addLayer(streets.group);
+    setStreetStatus('Corners snap to the dashed street centerlines. Hold Alt to place a corner freely.');
+  } catch (err) {
+    streets.shownKey = '';
+    setStreetStatus(`Couldn't load street centerlines: ${err.message}.`);
+  }
+}
+function setStreetStatus(text) { streets.status = text; const el = $('#street-status'); if (el) el.textContent = text; }
+map.on('pm:globaldrawmodetoggled pm:globaleditmodetoggled pm:globalcutmodetoggled', refreshStreetSnap);
+map.on('moveend', () => { if (streets.snapOn) refreshStreetSnap(); });
+
+/**
+ * Rebuild a polygon from whole street blocks.
+ * @param {object} geometry  GeoJSON Polygon or MultiPolygon (WGS84)
+ * @returns {Promise<{geometry: object, blocks: number}>}
+ */
+async function snapToBlocks(geometry) {
+  const aoi = cleanAoi(geometry);
+  if (turf.area(aoi) / SQM_PER_SQMI > BLOCK_MAX_SQMI) throw new Error(`the area is over ${BLOCK_MAX_SQMI} sq mi`);
+  const bb = turf.bbox(turf.buffer(aoi, BLOCK_BUFFER_KM, { units: 'kilometers' }));
+  const lines = await streetsIn(bb);
+  if (lines.length < 4) throw new Error('no street centerlines were found here');
+  // polygonize needs plain line features; it returns one polygon per closed street loop (a block).
+  const faces = turf.polygonize(turf.featureCollection(lines.map(f => ({ type: 'Feature', properties: {}, geometry: f.geometry })))).features;
+  const ab = turf.bbox(aoi), keep = [];
+  for (const face of faces) {
+    const fb = turf.bbox(face);
+    if (fb[2] < ab[0] || fb[0] > ab[2] || fb[3] < ab[1] || fb[1] > ab[3]) continue;   // nowhere near
+    let share;
+    try {
+      if (turf.booleanWithin(face, aoi)) share = 1;
+      else { const x = turf.intersect(turf.featureCollection([face, aoi])); share = x ? turf.area(x) / turf.area(face) : 0; }
+    } catch { share = turf.booleanPointInPolygon(turf.pointOnFeature(face), aoi) ? 1 : 0; }
+    if (share >= BLOCK_SHARE) keep.push(face);
+  }
+  if (!keep.length) throw new Error('no whole block is at least half inside this polygon');
+  const merged = keep.length === 1 ? keep[0] : turf.union(turf.featureCollection(keep));
+  if (!merged || !isPoly(merged.geometry)) throw new Error('the blocks could not be merged');
+  // Drop the duplicate vertices polygonize leaves where segments meet in a straight line.
+  return { geometry: turf.cleanCoords(merged).geometry, blocks: keep.length };
+}
+
+/** Snap a planning polygon to whole blocks, as its own undo step (so undo restores the hand-drawn outline). */
+async function snapArea(a) {
+  if (!a) return;
+  const rev = a.rev;
+  toast(`Snapping “${a.name}” to street blocks…`, 'info', 2500);
+  try {
+    const r = await snapToBlocks(a.geometry);
+    if (!state.plan.areas.includes(a) || a.rev !== rev) return;   // deleted or edited while we worked
+    a.geometry = r.geometry; a.rev = revCounter++; a.dirty = true;
+    drawArea(a); scheduleUpdate(); commit();
+    toast(`“${a.name}” now follows street centerlines (${r.blocks.toLocaleString()} block${r.blocks === 1 ? '' : 's'}). Undo to go back to your outline.`);
+  } catch (err) {
+    console.warn('Block snapping failed', err);
+    toast(`Couldn't snap “${a.name}” to blocks: ${err.message || err}. The outline was kept as drawn.`, 'error');
+  }
+}
+
+/* ================================================================== *
+ * §12 Vacant buildings
+ *     The City's Vacant Property Indicators (buildings), queried live
+ *     for whichever polygon is selected.
+ * ================================================================== */
+const VACANT_URL = `${CITY_GIS}/Vacant_Indicators_Bldg/FeatureServer/0/query`;
+const VACANT_MAX_SQMI = Infinity;    // no limit
+const VACANT_MIN_ZOOM = 15;   // footprints only draw at this zoom and closer
+const vacancy = { on: true, key: '', seq: 0, group: L.layerGroup(), geo: null, count: null, name: '', tooBig: false, error: '', text: '' };
+const vacantColor = r => (r >= 1 ? '#B42318' : r >= 0.83 ? '#E0531F' : r >= 0.67 ? '#E8922B' : '#E9C46A');
+
+function vacantParams(geometry, extra) {
+  // Esri wants clockwise outer rings; GeoJSON uses counterclockwise
+  const g = turf.rewind(feature(geometry), { reverse: true }).geometry;
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  const rings = polys.flatMap(p => p.map(r => r.map(([x, y]) => [+x.toFixed(6), +y.toFixed(6)])));
+  return new URLSearchParams({
+    where: '1=1', geometry: JSON.stringify({ rings, spatialReference: { wkid: 4326 } }),
+    geometryType: 'esriGeometryPolygon', inSR: '4326', spatialRel: 'esriSpatialRelIntersects', ...extra,
+  });
+}
+async function postVacant(params) {
+  const r = await fetch(VACANT_URL, { method: 'POST', body: params });   // POST: polygons can be too long for a URL
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message || 'query failed');
+  return j;
+}
+async function fetchVacantCount(geometry) {
+  const j = await postVacant(vacantParams(geometry, { returnCountOnly: 'true', f: 'json' }));
+  return j.count || 0;
+}
+async function fetchVacant(geometry) {
+  const feats = [];
+  for (let offset = 0, i = 0; i < 20; i++) {
+    const j = await postVacant(vacantParams(geometry, {
+      outFields: 'address,owner1,bldg_desc,build_rank,opa_id', outSR: '4326', f: 'geojson',
+      orderByFields: 'objectid', resultOffset: String(offset), resultRecordCount: '2000',
+    }));
+    const batch = j.features || [];
+    feats.push(...batch); offset += batch.length;
+    if (!batch.length || !(j.exceededTransferLimit || (j.properties && j.properties.exceededTransferLimit))) break;
+  }
+  return feats;
+}
+
+function vacantPopup(p) {
+  const opa = p.opa_id ? `<br><a href="https://property.phila.gov/?p=${encodeURIComponent(p.opa_id)}" target="_blank" rel="noopener">Property record (OPA ${esc(p.opa_id)})</a>` : '';
+  return `<strong>${esc(p.address || 'Unknown address')}</strong><br>${esc(p.bldg_desc || '')}<br>Vacancy rank: ${esc(p.build_rank)}${p.owner1 ? `<br>Owner: ${esc(p.owner1)}` : ''}${opa}`;
+}
+
+function vacancyMessage() {
+  if (!vacancy.on) return '';
+  if (vacancy.error) return `Couldn't load vacant buildings: ${vacancy.error}. Turn the checkbox off and on to retry.`;
+  if (!vacancy.key) return 'Select a planning polygon or map boundary to see possibly vacant buildings inside it.';
+  if (vacancy.count === null) return `Loading possibly vacant buildings in ${vacancy.name}…`;
+  const n = `${vacancy.count.toLocaleString()} possibly vacant building${vacancy.count === 1 ? '' : 's'} in ${vacancy.name}`;
+  if (vacancy.tooBig) return `${n}. The area is over ${VACANT_MAX_SQMI} sq mi, so they aren't drawn on the map.`;
+  if (vacancy.count && map.getZoom() < VACANT_MIN_ZOOM) return `${n}. Zoom in to see them on the map.`;
+  return vacancy.count ? `${n}. Click one for details.` : `${n}.`;
+}
+
+// Show or hide footprints for the current zoom and refresh both status lines.
+function syncVacancy() {
+  const show = vacancy.on && vacancy.geo && map.getZoom() >= VACANT_MIN_ZOOM;
+  if (show && !map.hasLayer(vacancy.group)) map.addLayer(vacancy.group);
+  if (!show && map.hasLayer(vacancy.group)) map.removeLayer(vacancy.group);
+  if (show) vacancy.geo.bringToFront();
+  vacancy.text = vacancyMessage();
+  const s = $('#vacancy-status'); if (s) s.textContent = vacancy.text;
+  const d = $('#vacancy-demo'); if (d) { d.textContent = vacancy.text; d.hidden = !vacancy.key || !vacancy.text; }
+}
+map.on('zoomend', syncVacancy);
+
+/** Fetch vacant buildings for the current selection, unless the same shape is already loaded. */
+async function refreshVacancy() {
+  const sel = state.analysisSelection || {};
+  let geom = null, key = '', name = '';
+  if (vacancy.on && sel.type === 'plan') {
+    const a = state.plan.areas.find(x => x.id === sel.id);
+    if (a) { geom = a.geometry; key = `p${a.id}:${a.rev}`; name = a.name; }
+  } else if (vacancy.on && sel.type === 'reference' && sel.geometry) {
+    geom = sel.geometry; key = `r:${sel.name}`; name = sel.name;
+  }
+  if (key === vacancy.key) return;            // same selection and shape: nothing to fetch
+  Object.assign(vacancy, { key, name, count: null, tooBig: false, error: '', geo: null });
+  const seq = ++vacancy.seq;
+  vacancy.group.clearLayers();
+  syncVacancy();
+  if (!geom) return;
+  try {
+    vacancy.tooBig = turf.area(feature(geom)) / SQM_PER_SQMI > VACANT_MAX_SQMI;
+    if (vacancy.tooBig) {
+      const count = await fetchVacantCount(geom);
+      if (seq !== vacancy.seq) return;        // selection changed while loading
+      vacancy.count = count;
+    } else {
+      const feats = await fetchVacant(geom);
+      if (seq !== vacancy.seq) return;
+      vacancy.count = feats.length;
+      vacancy.geo = L.geoJSON({ type: 'FeatureCollection', features: feats }, {
+        pane: 'refPane', renderer: refRenderer, pmIgnore: true, snapIgnore: true,
+        style: f => ({ color: '#5A1A10', weight: 0.8, fillColor: vacantColor(f.properties.build_rank), fillOpacity: 0.75 }),
+        onEachFeature: (f, l) => {
+          l.bindTooltip(esc(f.properties.address || 'Possibly vacant building'), { sticky: true, className: 'ref-tip' });
+          l.bindPopup(() => vacantPopup(f.properties));
+        },
+      }).addTo(vacancy.group);
+    }
+  } catch (err) {
+    if (seq !== vacancy.seq) return;
+    vacancy.error = err.message || String(err);
+  }
+  syncVacancy();
+}
+
+$('#toggle-vacant').addEventListener('change', e => { vacancy.on = e.target.checked; vacancy.key = '__force__'; refreshVacancy(); });
+
+/* ================================================================== *
+ * §13 Demographic model
+ *     Loads ACS tract totals and the per-building weights produced by
+ *     scripts/02 and scripts/03, and indexes buildings on a coarse grid.
+ * ================================================================== */
 const cleanGeoid = v => String(v ?? '').replace(/\.0$/, '').padStart(11, '0');
 const gridSize = 0.02;
 const gridKey = (lon, lat) => `${Math.floor(lon / gridSize)},${Math.floor(lat / gridSize)}`;
@@ -1017,6 +1722,10 @@ async function fetchCsvRows(url) {
   return parsed.data;
 }
 
+/**
+ * Load ACS tract totals and building weights, then index buildings on a
+ * gridSize-degree grid so a polygon only tests nearby buildings.
+ */
 async function loadDemographicSources() {
   const status = $('#demo-source-status');
   try {
@@ -1083,9 +1792,10 @@ async function loadDemographicSources() {
   }
 }
 
-/* ------------------------------------------------------------------ *
- * Analysis
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §14 Analysis
+ *     Turns any polygon into demographic numbers. See aggregateResidential().
+ * ================================================================== */
 function cleanAoi(geometry) {
   let f = feature(geometry);
   try {
@@ -1176,6 +1886,10 @@ function aggregateOutreach(aoi) {
   return sums;
 }
 
+/**
+ * Full analysis of one polygon.
+ * @returns {{sqmi: number, demo: ?{vals, buildingsUsed, residentialUnits, vacantBuildings, tractsUsed}}}
+ */
 function analyze(geometry) {
   const aoi = cleanAoi(geometry);
   const demo = aggregateResidential(aoi);
@@ -1183,6 +1897,7 @@ function analyze(geometry) {
   if (demo && out) Object.assign(demo.vals, out);
   return { sqmi: turf.area(aoi) / SQM_PER_SQMI, demo };
 }
+/** Cached analysis of one planning polygon (re-runs only when its shape or the data change). */
 function areaStats(area) {
   const key = `${area.id}|${area.rev}|${state.dataRev}`;
   if (!statsCache.has(key)) statsCache.set(key, analyze(area.geometry));
@@ -1194,6 +1909,7 @@ function unionGeometry(areas) {
   if (polys.length === 1) return polys[0].geometry;
   try { const u = turf.union(turf.featureCollection(polys)); return u ? u.geometry : null; } catch { return null; }
 }
+/** Cached analysis of a whole plan ('plan' = current, 'compare' = saved), using the union of its polygons. */
 function planStats(which) {
   const plan = which === 'compare' ? state.compare : state.plan;
   if (!plan || !plan.areas.length) return null;
@@ -1206,6 +1922,7 @@ function planStats(which) {
   return r;
 }
 
+/** Compute one METRICS entry from summed counts: a count, a median, a percentage or a rate per 1,000. */
 function metricValue(m, vals) {
   if (!vals) return null;
   const sum = fields => { let s = 0; for (const f of fields) { if (!Number.isFinite(vals[f])) return null; s += vals[f]; } return s; };
@@ -1238,9 +1955,10 @@ function fmtDiff(m, d) {
 }
 const sqmi = v => (v < 0.1 ? v.toFixed(3) : v.toFixed(2)) + ' sq mi';
 
-/* ------------------------------------------------------------------ *
- * Plan areas on the map
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §15 Plan areas
+ *     Drawing, editing, copying and removing planning polygons.
+ * ================================================================== */
 const areaStyle = a => {
   const sel = state.selected === a.id;
   return { color: a.color, weight: sel ? 3.6 : 2.2, opacity: a.lineOpacity ?? 1, fillColor: a.color,
@@ -1248,6 +1966,7 @@ const areaStyle = a => {
 };
 const areaLabel = a => `<span class="tag" style="background:${esc(a.color)};color:${inkFor(a.color)}">${esc(a.name || 'Unnamed area')}</span>`;
 
+/** (Re)create the map layer for a planning polygon, with its label, click and edit handlers. */
 function drawArea(a) {
   if (a.layer && map.hasLayer(a.layer)) map.removeLayer(a.layer);
   const layer = L.GeoJSON.geometryToLayer(feature(a.geometry), {});
@@ -1276,6 +1995,11 @@ function restyleArea(a) {
   a.layer.setTooltipContent(areaLabel(a));
 }
 
+/**
+ * Add a planning polygon to the plan.
+ * opts: color, fillOpacity, lineOpacity, visible, origin ('base' | 'new'), baseKey, dirty,
+ *       quiet (true = don't select it, re-render or record an undo step).
+ */
 function addArea(name, geometry, opts = {}) {
   const a = {
     id: nextId++, name: name || `Area ${state.plan.areas.length + 1}`, geometry, rev: revCounter++, layer: null,
@@ -1295,6 +2019,7 @@ function setAreaVisible(a, visible) {
   if (visible && !map.hasLayer(a.layer)) a.layer.addTo(map);
   if (!visible && map.hasLayer(a.layer)) map.removeLayer(a.layer);
 }
+/** Remove a planning polygon. Removing a base polygon is remembered so saved plans can replay it. */
 function removeArea(id, { fromMap = false, silent = false } = {}) {
   const i = state.plan.areas.findIndex(a => a.id === id);
   if (i < 0) return;
@@ -1318,6 +2043,7 @@ function clearPlan() {
   for (const a of state.plan.areas) if (a.layer && map.hasLayer(a.layer)) map.removeLayer(a.layer);
   state.plan.areas = []; state.plan.removedBase = new Set(); state.selected = null; state.analysisSelection = { type: 'whole' };
 }
+/** Highlight a planning polygon and make it the Demographics selection (null = whole plan). */
 function select(id, fromMap = false) {
   state.selected = id;
   state.analysisSelection = id ? { type: 'plan', id } : { type: 'whole' };
@@ -1336,6 +2062,7 @@ function linesToPolygon(g) {
   if (!rings.length) return null;
   return rings.length === 1 ? { type: 'Polygon', coordinates: [rings[0]] } : { type: 'MultiPolygon', coordinates: rings.map(r => [r]) };
 }
+/** Turn imported features into planning-area records; closed lines become polygons, points are skipped. */
 function areasFromFC(fc) {
   let converted = 0, skipped = 0;
   const out = [];
@@ -1358,11 +2085,14 @@ function areasFromFC(fc) {
   return { areas: out, converted, skipped };
 }
 
+// A finished drawing becomes a planning polygon (Geoman's own layer is swapped for ours),
+// then optionally snaps to whole street blocks as a second, undoable step.
 map.on('pm:create', e => {
   const g = e.layer.toGeoJSON().geometry;
   map.removeLayer(e.layer);
-  addArea(null, g);
+  const a = addArea(null, g);
   showTab('plan');
+  if (streets.blockOn) snapArea(a);
 });
 map.on('pm:remove', e => { if (e.layer && e.layer._areaId) removeArea(e.layer._areaId, { fromMap: true }); });
 map.on('pm:cut', e => {
@@ -1376,9 +2106,11 @@ map.on('pm:cut', e => {
   a.geometry = g; a.rev = revCounter++; a.dirty = true; a.layer = null; drawArea(a); scheduleUpdate(); commit();
 });
 
-/* ------------------------------------------------------------------ *
- * Base polygons, saving and opening plans
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §16 Saving and opening
+ *     Base polygons, plan files (only new/edited polygons are saved),
+ *     the saved-plan overlay for Compare, autosave and CSV export.
+ * ================================================================== */
 async function fetchBaseAreas() {
   if (!state.baseAreas.length) {
     const fc = normalizeFC(await fetchJSON(BASE_PLAN_URL));
@@ -1422,6 +2154,7 @@ function planFeatureCollection(areas) {
 }
 const changedAreas = () => state.plan.areas.filter(a => a.origin !== 'base' || a.dirty);
 
+/** Download new and edited polygons (with their demographics) as a plan GeoJSON. */
 function savePlan() {
   const areas = changedAreas();
   if (!areas.length && !state.plan.removedBase.size) return toast('There’s nothing new to save — no polygons have been added or edited.', 'error');
@@ -1506,8 +2239,9 @@ async function loadCompare() {
       saved: res.meta && res.meta.saved,
       areas: areas.map((a, i) => ({ name: a.name || `Area ${i + 1}`, geometry: a.geometry, id: `c${i}`, rev: 0 })),
     });
+    state.compareB = { src: 'saved', index: -1 };   // compare the current selection against the whole saved plan
     showTab('compare');
-    toast(`Loaded “${state.compare.name}” for comparison.`);
+    toast(`Loaded “${state.compare.name}” for comparison. It is listed under Plans in both source lists.`);
   } catch (err) {
     console.error(err);
     toast(err.message || `Couldn’t read ${file.name}.`, 'error');
@@ -1543,6 +2277,7 @@ function autosave() {
   } catch { /* storage full or unavailable */ }
 }
 
+/** Download one CSV row of demographics per planning polygon, plus the whole plan. */
 function exportCSV() {
   const metrics = availableMetrics();
   const header = ['plan', 'area', 'sq_mi', ...metrics.map(m => m.prop), 'residential_buildings', 'residential_units', 'tracts_used'];
@@ -1555,9 +2290,10 @@ function exportCSV() {
   download(`${slug(state.plan.name)}_demographics_${today()}.csv`, csv, 'text/csv');
 }
 
-/* ------------------------------------------------------------------ *
- * Color + transparency picker
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §17 Color + transparency picker
+ *     A small popover shared by planning polygons and reference layers.
+ * ================================================================== */
 const picker = (() => {
   const el = document.createElement('div');
   el.className = 'picker'; el.hidden = true; el.setAttribute('role', 'dialog');
@@ -1661,8 +2397,9 @@ function openAreaStyle(a, anchor) {
     },
   });
 }
+/** Open the Style picker for a reference layer; which sliders appear depends on the layer kind. */
 function openSlotStyle(slot, anchor) {
-  const fields = slot.kind === 'point' ? { fill: true, fillLabel: 'Transparency', size: true, sizeMin: 2, sizeMax: 16 }
+  const fields = slot.kind === 'point' || slot.kind === 'poi' ? { fill: true, fillLabel: 'Transparency', size: true, sizeMin: 2, sizeMax: 16 }
     : slot.kind === 'heat' ? { fill: true, fillLabel: 'Transparency', size: true, sizeLabel: 'Spread', sizeMin: 8, sizeMax: 60 }
     : { fill: true, line: true };
   picker.open(anchor, {
@@ -1672,30 +2409,46 @@ function openSlotStyle(slot, anchor) {
   });
 }
 
-/* ------------------------------------------------------------------ *
- * Rendering
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §18 Rendering
+ *     Tabs, the layer list, the planning-polygon list and the
+ *     Demographics tab. Everything is re-rendered from state.
+ * ================================================================== */
+const TABS = ['data', 'demographics', 'plan', 'compare'];
+
+/** Switch the side panel to a tab ('data', 'demographics', 'plan' or 'compare'). */
 function showTab(name) {
-  for (const t of ['data', 'demographics', 'plan', 'compare']) {
+  for (const t of TABS) {
     $(`#tab-${t}`).setAttribute('aria-selected', String(t === name));
     $(`#panel-${t}`).hidden = t !== name;
   }
+  if (isPanelCollapsed()) setPanelCollapsed(false);   // a map click that opens a tab should show it
   if (name === 'demographics') renderDemographics();
-  if (name === 'compare') renderCompare();
+  if (name === 'compare') renderCompare(); else clearCompareHighlight();
 }
 $$('.tab').forEach(t => t.addEventListener('click', () => showTab(t.id.replace('tab-', ''))));
 
+const HEAT_LABELS = { total: 'All members', active: 'Active', disengaged: 'Disengaged', milestone: 'Milestone complete', inquiry: 'Inquiry' };
+
+/** The Layers tab: one row ("slot") per SLOTS entry with show/zoom/style controls. */
 function renderSlots() {
   $('#slots').innerHTML = SLOTS.map(s => {
     const e = state.layers[s.key], st = styleOf(s);
-    const keyCls = s.kind === 'point' ? 'key point' : s.kind === 'heat' ? 'key heat' : 'key';
+    const keyCls = s.kind === 'point' || s.kind === 'poi' ? 'key point' : s.kind === 'heat' ? 'key heat' : 'key';
     let body = `<p class="help">${esc(s.help)}</p>`;
-    if (e) {
+    if (e && s.kind === 'poi') {
+      const cats = POI_CATEGORIES.map(c => `<option value="${c.id}" ${c.id === e.category ? 'selected' : ''}>${esc(c.label)}</option>`).join('');
+      body += `<p class="status">${poiStatusHtml()}</p>
+        <div class="row controls"><label class="inline"><input type="checkbox" data-act="toggle" ${e.visible ? 'checked' : ''}> Show</label>
+          <label class="inline">Type <select class="small" data-act="category"><option value="all">All places</option>${cats}</select></label>
+          <button class="btn quiet small" data-act="style">Style</button></div>
+        ${e.visible ? `<div class="poi-legend">${POI_CATEGORIES.map(c => `<span><i style="background:${c.color}"></i>${esc(c.label)}</span>`).join('')}</div>` : ''}`;
+    } else if (e) {
       const count = s.kind === 'heat'
         ? `<strong>${Math.round(e.members || 0).toLocaleString()}</strong> members in ${e.rows.length.toLocaleString()} grid cells`
         : `<strong>${e.fc.features.length.toLocaleString()}</strong> features${e.fileName && e.fileName.startsWith('City') ? ` <span style="color:#505B6E">(live from ${esc(e.fileName)})</span>` : ''}`;
       const status = s.kind === 'heat' && e.statuses.length > 1
-        ? `<label class="inline">Show <select class="small" data-act="status">${e.statuses.map(k => `<option value="${k}" ${k === e.status ? 'selected' : ''}>${{ total: 'All members', active: 'Active', disengaged: 'Disengaged', milestone: 'Milestone complete', inquiry: 'Inquiry' }[k]}</option>`).join('')}</select></label>` : '';
+        ? `<label class="inline">Show <select class="small" data-act="status">${e.statuses.map(k => `<option value="${k}" ${k === e.status ? 'selected' : ''}>${HEAT_LABELS[k]}</option>`).join('')}</select></label>` : '';
       body += `<p class="status">${count}</p>
         <div class="row controls"><label class="inline"><input type="checkbox" data-act="toggle" ${e.visible ? 'checked' : ''}> Show</label>
           ${s.kind !== 'heat' ? '<button class="btn quiet small" data-act="zoom">Zoom to</button>' : ''}
@@ -1703,7 +2456,7 @@ function renderSlots() {
     } else if (s.kind === 'heat') {
       body += `<p class="status">Not loaded.</p><p class="fieldnote">Run <code>scripts/05_outreach_heatmap.py</code> to create <code>docs/data/outreach_heat.csv</code>.</p>`;
     } else {
-      body += `<p class="status">File not loaded.</p><p class="fieldnote">Expected: <code>${esc(s.url)}</code></p>`;
+      body += `<p class="status">File not loaded.</p><p class="fieldnote">Expected: <code>docs/${esc(s.url)}</code></p>`;
     }
     return `<div class="slot" data-key="${s.key}"><span class="${keyCls}" style="--c:${esc(st.color)};--fillpct:${Math.round((st.fillOpacity ?? 0.2) * 100)}%"></span><div><h2>${esc(s.title)}</h2>${body}</div></div>`;
   }).join('');
@@ -1722,13 +2475,24 @@ $('#slots').addEventListener('change', e => {
   if (!entry) return;
   if (el.dataset.act === 'toggle') {
     entry.visible = el.checked;
+    if (!entry.visible && key === 'outreach' && entry.leaflet._canvas) {
+      // leaflet.heat removes its canvas from overlayPane; put it back there first
+      map.getPanes().overlayPane.appendChild(entry.leaflet._canvas);
+    }
     if (entry.visible) entry.leaflet.addTo(map); else map.removeLayer(entry.leaflet);
     reorderRefLayers(); updateLabels(); renderLegend();
+    if (key === 'poi') {
+      renderSlots();
+      if (entry.visible && map.getZoom() < POI_MIN_ZOOM) toast('Zoom in to street level to see places of interest.');
+      refreshPoi();
+    }
   }
   if (el.dataset.act === 'status') { entry.status = el.value; setHeatData(entry); renderSlots(); renderLegend(); }
+  if (el.dataset.act === 'category') { entry.category = el.value; drawPoi(); }
 });
 
 let listIds = '';
+/** The Plan tab's polygon list. Rows are rebuilt only when the list itself changes, so typing in a name keeps focus. */
 function renderPlanList(force = false) {
   const areas = state.plan.areas;
   $('#plan-count').textContent = areas.length;
@@ -1749,6 +2513,7 @@ function renderPlanList(force = false) {
           <div class="area-sub"><span class="area-meta"></span><span class="row">
             <button class="icon-btn" data-act="stats">Demographics</button>
             <button class="icon-btn" data-act="copy">Copy</button>
+            <button class="icon-btn" data-act="snap" title="Redraw along street centerlines so the polygon holds whole blocks">Snap</button>
             <button class="icon-btn" data-act="zoom">Zoom</button>
             <button class="icon-btn" data-act="remove">Remove</button>
           </span></div>
@@ -1778,6 +2543,7 @@ $('#area-list').addEventListener('click', e => {
   const what = act && act.dataset.act;
   if (what === 'remove') return removeArea(id);
   if (what === 'copy') return copyArea(id);
+  if (what === 'snap') return snapArea(a);
   if (what === 'zoom') { fitTo([a.layer]); select(id); return; }
   if (what === 'stats') { select(id); showTab('demographics'); return; }
   if (what === 'style') { select(id); openAreaStyle(a, act); return; }
@@ -1797,6 +2563,7 @@ $('#area-list').addEventListener('input', e => {
   renderDemographics(); renderCompareSoon(); autosave();
 });
 
+/** The grouped metric tables shown in the Demographics tab. */
 function statsBlock(r) {
   if (!state.demographic.ready) return `<p class="empty" style="padding:12px 0">Demographics are unavailable until <code>philly_tracts_acs2024.csv</code> and <code>building_weights_web.csv</code> load successfully.</p>`;
   if (!r.demo || !r.demo.buildingsUsed) return `<p class="empty" style="padding:12px 0">No modeled residential buildings fall inside this polygon.</p>`;
@@ -1812,6 +2579,7 @@ function statsBlock(r) {
   return html;
 }
 
+/** What the Demographics tab should show: a clicked boundary, one planning polygon, or the whole plan. */
 function analysisResult() {
   const sel = state.analysisSelection || { type: 'whole' };
   if (sel.type === 'reference' && sel.geometry) return { name: sel.name || 'Selected polygon', r: analyze(sel.geometry), key: '__reference__' };
@@ -1819,7 +2587,9 @@ function analysisResult() {
   return { name: 'Whole plan', r: planStats('plan'), key: '' };
 }
 
+/** The Demographics tab. */
 function renderDemographics() {
+  refreshVacancy();
   const selectEl = $('#demo-scope');
   const cur = analysisResult();
   const refOption = state.analysisSelection.type === 'reference' ? `<option value="__reference__" selected>${esc(state.analysisSelection.name || 'Selected map polygon')}</option>` : '';
@@ -1827,7 +2597,10 @@ function renderDemographics() {
   const box = $('#demographics');
   if (!cur.r) { box.innerHTML = `<p class="empty">Add or load at least one planning polygon.</p>`; return; }
   const summary = cur.r.demo && cur.r.demo.buildingsUsed ? `${sqmi(cur.r.sqmi)} • ${cur.r.demo.buildingsUsed.toLocaleString()} residential building locations • ${cur.r.demo.tractsUsed.toLocaleString()} ACS tracts` : sqmi(cur.r.sqmi);
-  box.innerHTML = `<div class="details-head"><h2>${esc(cur.name)}</h2></div><p class="summary">${summary}</p>${statsBlock(cur.r)}
+  const sel = state.analysisSelection;
+  const info = sel.type === 'reference' && sel.info ? `<div class="info-card" style="--c:${esc(sel.color || '')}">${sel.info}</div>` : '';
+  box.innerHTML = `<div class="details-head"><h2>${esc(cur.name)}</h2></div><p class="summary">${summary}</p>${info}
+    <p class="summary" id="vacancy-demo" ${vacancy.key && vacancy.text ? '' : 'hidden'}>${esc(vacancy.text)}</p>${statsBlock(cur.r)}
     <p class="note">Household population is modeled building by building from ACS tract totals, OPA unit counts, vacancy, and owner and renter household sizes. Inside a polygon, person counts are split by modeled population, household counts by occupied units, and owner or renter counts by owner or renter units, so every tract still adds up to its ACS total. Percentages are recalculated from those counts; median income, rent and home value are household-weighted averages of tract medians. Outreach members are counted from ~250 m grid cells (a cell on the polygon edge counts by the share inside), so treat small-area counts as approximate; members recorded with only a ZIP code are not included.</p>
     <div class="row" style="margin-top:12px"><button class="btn quiet small" id="btn-csv">Download plan demographics (CSV)</button></div>`;
   $('#btn-csv').addEventListener('click', exportCSV);
@@ -1840,9 +2613,95 @@ $('#demo-scope').addEventListener('change', e => {
   renderDemographics(); renderPlanList();
 });
 
+/* ================================================================== *
+ * §19 Compare
+ *     Each side of the comparison is a "ref": { src, index }.
+ *       src 'whole'        the whole current plan (all polygons merged)
+ *       src 'area'         one planning polygon        (index = area id)
+ *       src 'saved'        a loaded saved plan         (index -1 = whole plan, else area position)
+ *       src 'layer:<key>'  a boundary from SLOTS       (index = feature position in that layer)
+ *     The "source" dropdown picks src (plans first, then boundary layers
+ *     grouped by SLOTS[].compare); the second dropdown lists every item
+ *     in that source, e.g. every ZIP code.
+ * ================================================================== */
+const CMP_COLORS = { A: C.plan, B: C.harbor };
+const cmpHighlight = L.layerGroup();
+const naturalSort = (a, b) => a.label.localeCompare(b.label, 'en', { numeric: true, sensitivity: 'base' });
+
+/** Options for the "source" dropdown, in display order. */
+function compareSources() {
+  const out = [];
+  if (state.plan.areas.length) {
+    out.push({ value: 'area', label: 'Planning polygons', group: 'Plans' });
+    out.push({ value: 'whole', label: 'Whole current plan', group: 'Plans' });
+  }
+  if (state.compare) out.push({ value: 'saved', label: `Saved plan: ${state.compare.name}`, group: 'Plans' });
+  for (const s of SLOTS) {
+    const e = state.layers[s.key];
+    if (s.compare && e && e.fc && e.fc.features.some(f => isPoly(f.geometry))) out.push({ value: `layer:${s.key}`, label: s.title, group: s.compare });
+  }
+  return out;
+}
+
+/** Items for the second dropdown: [{ index, label }]. */
+function compareItems(src) {
+  if (src === 'whole') return [{ index: 0, label: state.plan.name }];
+  if (src === 'area') return state.plan.areas.map(a => ({ index: a.id, label: a.name || 'Unnamed area' }));
+  if (src === 'saved') {
+    const c = state.compare; if (!c) return [];
+    return [{ index: -1, label: 'Whole saved plan' }, ...c.areas.map((a, i) => ({ index: i, label: a.name }))];
+  }
+  if (src.startsWith('layer:')) {
+    const key = src.slice(6), slot = SLOTS.find(s => s.key === key), e = state.layers[key];
+    if (!slot || !e || !e.fc) return [];
+    return e.fc.features.map((f, i) => (isPoly(f.geometry) ? { index: i, label: featureName(slot, f, e) } : null)).filter(Boolean).sort(naturalSort);
+  }
+  return [];
+}
+
+/** Make sure a ref still points at something (polygons get deleted, saved plans get unloaded). */
+function normalizeRef(ref, fallbackPos) {
+  const sources = compareSources();
+  if (!ref || !sources.some(s => s.value === ref.src)) {
+    const areas = state.plan.areas;
+    if (areas.length) return { src: 'area', index: (areas[fallbackPos] || areas[0]).id };
+    return sources[0] ? { src: sources[0].value, index: (compareItems(sources[0].value)[0] || {}).index } : null;
+  }
+  const items = compareItems(ref.src);
+  if (!items.some(it => it.index === ref.index)) return { src: ref.src, index: (items[Math.min(fallbackPos, items.length - 1)] || items[0] || {}).index };
+  return ref;
+}
+
+/** Look up a ref: { name, geometry, stats }. Boundary stats are cached like plan stats. */
+function resolveCompare(ref) {
+  if (!ref) return null;
+  if (ref.src === 'whole') return { name: `${state.plan.name} (whole plan)`, geometry: unionGeometry(state.plan.areas), stats: planStats('plan') };
+  if (ref.src === 'area') {
+    const a = state.plan.areas.find(x => x.id === ref.index);
+    return a ? { name: a.name, geometry: a.geometry, stats: areaStats(a) } : null;
+  }
+  if (ref.src === 'saved') {
+    const c = state.compare; if (!c) return null;
+    if (ref.index === -1) return { name: `${c.name} (saved plan)`, geometry: unionGeometry(c.areas), stats: planStats('compare') };
+    const a = c.areas[ref.index];
+    return a ? { name: `${a.name} (saved)`, geometry: a.geometry, stats: areaStats(a) } : null;
+  }
+  if (ref.src.startsWith('layer:')) {
+    const key = ref.src.slice(6), slot = SLOTS.find(s => s.key === key), e = state.layers[key];
+    const f = e && e.fc && e.fc.features[ref.index];
+    if (!f) return null;
+    const cacheKey = `L|${key}|${ref.index}|${state.dataRev}`;
+    if (!statsCache.has(cacheKey)) statsCache.set(cacheKey, analyze(f.geometry));
+    return { name: featureName(slot, f, e), geometry: f.geometry, stats: statsCache.get(cacheKey) };
+  }
+  return null;
+}
+
+/** Table body: one row per metric, grouped like the Demographics tab. */
 function compareRows(ra, rb) {
   const metrics = availableMetrics();
-  let rows = '';
+  const area = r => (r ? r.sqmi : null);
+  let rows = `<tr><td>Land area (sq mi)</td><td>${area(ra) === null ? '–' : area(ra).toFixed(2)}</td><td>${area(rb) === null ? '–' : area(rb).toFixed(2)}</td><td class="diff">${ra && rb ? fmtSqmiDiff(ra.sqmi - rb.sqmi) : '–'}</td></tr>`;
   for (const g of [...new Set(metrics.map(m => m.group))]) {
     rows += `<tr class="grp"><td colspan="4">${esc(g)}</td></tr>`;
     for (const m of metrics.filter(x => x.group === g)) {
@@ -1853,29 +2712,88 @@ function compareRows(ra, rb) {
   }
   return rows;
 }
+const fmtSqmiDiff = d => (Math.abs(d) < 0.005 ? 'same' : `${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(2)}`);
+
+/** One side's picker card (A or B). */
+function comparePicker(side, ref) {
+  const sources = compareSources(), groups = [...new Set(sources.map(s => s.group))];
+  const srcOptions = groups.map(g => `<optgroup label="${esc(g)}">${sources.filter(s => s.group === g)
+    .map(s => `<option value="${esc(s.value)}" ${ref && s.value === ref.src ? 'selected' : ''}>${esc(s.label)}</option>`).join('')}</optgroup>`).join('');
+  const items = ref ? compareItems(ref.src) : [];
+  const itemSelect = items.length > 1
+    ? `<label>Which one (${items.length.toLocaleString()})<select data-side="${side}" data-part="index">${items.map(it => `<option value="${it.index}" ${it.index === ref.index ? 'selected' : ''}>${esc(it.label)}</option>`).join('')}</select></label>`
+    : '';
+  return `<div class="cmp-pick"><div class="side"><span class="badge" style="background:${CMP_COLORS[side]}">${side}</span>Area ${side}</div>
+    <label>Source<select data-side="${side}" data-part="src">${srcOptions}</select></label>${itemSelect}</div>`;
+}
+
+/** Outline A and B on the map while the Compare tab is open. */
+function drawCompareHighlight(a, b) {
+  cmpHighlight.clearLayers();
+  if (!state.compareShowOnMap) { if (map.hasLayer(cmpHighlight)) map.removeLayer(cmpHighlight); return; }
+  for (const [side, r] of [['A', a], ['B', b]]) {
+    if (!r || !r.geometry) continue;
+    const layer = L.geoJSON(feature(r.geometry), {
+      pane: 'highlightPane', interactive: false, pmIgnore: true, snapIgnore: true,
+      style: { color: CMP_COLORS[side], weight: 3.5, opacity: 0.95, fill: false, dashArray: side === 'B' ? '8 6' : null },
+    });
+    layer.eachLayer(l => l.bindTooltip(side, { permanent: true, direction: 'center', className: 'cmp-hl-tag', interactive: false }));
+    layer.addTo(cmpHighlight);
+  }
+  if (!map.hasLayer(cmpHighlight)) map.addLayer(cmpHighlight);
+}
+function clearCompareHighlight() { cmpHighlight.clearLayers(); if (map.hasLayer(cmpHighlight)) map.removeLayer(cmpHighlight); }
+
+/** The Compare tab. */
 function renderCompare() {
-  const box = $('#compare'), areas = state.plan.areas;
-  if (!areas.some(a => a.id === Number(state.compareA)) && areas[0]) state.compareA = areas[0].id;
-  if (!areas.some(a => a.id === Number(state.compareB)) && areas[1]) state.compareB = areas[1].id;
-  const a = areas.find(x => x.id === Number(state.compareA)), b = areas.find(x => x.id === Number(state.compareB));
-  const options = id => areas.map(x => `<option value="${x.id}" ${x.id === Number(id) ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
-  let html = `<div class="cmp-head"><h2 style="margin:0;font-size:16px">Compare planning polygons</h2><p class="summary" style="margin:0">Compare demographics directly between any two of the loaded planning polygons.</p></div>`;
-  if (areas.length >= 2 && a && b) {
-    html += `<div class="compare-controls"><label>Area A<select id="cmp-area-a">${options(state.compareA)}</select></label><label>Area B<select id="cmp-area-b">${options(state.compareB)}</select></label></div>
-      <div class="table-wrap"><table class="cmp"><thead><tr><th></th><th>${esc(a.name)}</th><th>${esc(b.name)}</th><th>A − B</th></tr></thead><tbody>${compareRows(areaStats(a), areaStats(b))}</tbody></table></div>`;
-  } else html += '<p class="empty">At least two planning polygons are needed for a direct comparison.</p>';
-  html += `<div class="compare-section"><div class="cmp-head"><h2 style="margin:0;font-size:16px">Compare with a saved plan</h2>`;
-  const c = state.compare;
-  if (!c) {
-    html += `<p class="summary" style="margin:0">Load a previously saved GeoJSON plan to compare the entire current plan against it.</p><div><button class="btn" id="btn-load-cmp">Load saved plan</button></div></div></div>`;
+  const box = $('#compare');
+  state.compareA = normalizeRef(state.compareA, 0);
+  state.compareB = normalizeRef(state.compareB, 1);
+  const a = resolveCompare(state.compareA), b = resolveCompare(state.compareB);
+
+  let html = `<div class="cmp-head"><h2 style="margin:0;font-size:16px">Compare two areas</h2>
+    <p class="summary" style="margin:0">Pick a planning polygon, the whole plan, a saved plan, or any boundary layer for each side. Choosing a source such as <strong>ZIP Codes</strong> lists every ZIP code in it.</p></div>
+    ${comparePicker('A', state.compareA)}${comparePicker('B', state.compareB)}
+    <div class="cmp-tools row">
+      <button class="btn quiet small" id="cmp-swap">Swap A ↔ B</button>
+      <button class="btn quiet small" id="cmp-zoom" ${a || b ? '' : 'disabled'}>Zoom to both</button>
+      <label class="inline"><input type="checkbox" id="cmp-highlight" ${state.compareShowOnMap ? 'checked' : ''}> Outline on map</label>
+    </div>`;
+  if (a && b) {
+    const ready = a.stats && b.stats && a.stats.demo && b.stats.demo;
+    html += ready
+      ? `<div class="table-wrap"><table class="cmp"><thead><tr><th></th><th>A · ${esc(a.name)}</th><th>B · ${esc(b.name)}</th><th>A − B</th></tr></thead><tbody>${compareRows(a.stats, b.stats)}</tbody></table></div>`
+      : '<p class="empty">Demographic data are not ready yet (see the Layers tab for the data status).</p>';
   } else {
-    const cur = planStats('plan'), old = planStats('compare');
-    const rows = cur && old && cur.demo && old.demo ? compareRows(cur, old) : '';
-    html += `<div class="legend-pair"><div><span class="swatch cur"></span>${esc(state.plan.name)} (current)</div><div><span class="swatch cmp"></span>${esc(c.name)}</div></div><div class="row"><label class="inline"><input type="checkbox" id="cmp-visible" ${c.visible ? 'checked' : ''}> Show saved plan on map</label></div><div class="row"><button class="btn quiet small" id="btn-cmp-replace">Load different plan</button><button class="btn quiet small" id="btn-cmp-clear">Stop comparing</button></div></div>${rows ? `<div class="table-wrap"><table class="cmp"><thead><tr><th></th><th>Current</th><th>Saved</th><th>Difference</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="empty">Demographic data are not ready for one or both plans.</p>'}</div>`;
+    html += '<p class="empty">Pick something for both A and B. Draw or import a planning polygon, or turn on a boundary layer, to have more choices.</p>';
+  }
+
+  // Saved plan: loading one adds it as a source above and shows it dashed on the map.
+  const c = state.compare;
+  html += `<div class="compare-section"><div class="cmp-head"><h2 style="margin:0;font-size:16px">Saved plan</h2>`;
+  if (!c) {
+    html += `<p class="summary" style="margin:0">Load a previously saved plan file to compare against it. It appears under <strong>Plans</strong> in the source lists.</p><div><button class="btn" id="btn-load-cmp">Load saved plan</button></div></div></div>`;
+  } else {
+    html += `<div class="legend-pair"><div><span class="swatch cmp"></span>${esc(c.name)}</div></div>
+      <div class="row"><label class="inline"><input type="checkbox" id="cmp-visible" ${c.visible ? 'checked' : ''}> Show saved plan on map</label></div>
+      <div class="row"><button class="btn quiet small" id="btn-cmp-replace">Load different plan</button><button class="btn quiet small" id="btn-cmp-clear">Stop comparing</button></div></div></div>`;
   }
   box.innerHTML = html;
-  $('#cmp-area-a')?.addEventListener('change', e => { state.compareA = Number(e.target.value); renderCompare(); });
-  $('#cmp-area-b')?.addEventListener('change', e => { state.compareB = Number(e.target.value); renderCompare(); });
+  drawCompareHighlight(a, b);
+
+  box.querySelectorAll('select[data-side]').forEach(sel => sel.addEventListener('change', e => {
+    const side = e.target.dataset.side, key = side === 'A' ? 'compareA' : 'compareB';
+    if (e.target.dataset.part === 'src') {
+      const items = compareItems(e.target.value);
+      state[key] = { src: e.target.value, index: items.length ? items[0].index : null };
+    } else {
+      state[key] = { ...state[key], index: Number(e.target.value) };
+    }
+    renderCompare();
+  }));
+  $('#cmp-swap').addEventListener('click', () => { [state.compareA, state.compareB] = [state.compareB, state.compareA]; renderCompare(); });
+  $('#cmp-zoom').addEventListener('click', () => fitTo(cmpHighlight.getLayers().length ? cmpHighlight.getLayers() : [a, b].filter(Boolean).map(r => L.geoJSON(feature(r.geometry)))));
+  $('#cmp-highlight').addEventListener('change', e => { state.compareShowOnMap = e.target.checked; drawCompareHighlight(a, b); });
   $('#btn-load-cmp')?.addEventListener('click', loadCompare);
   $('#cmp-visible')?.addEventListener('change', e => { c.visible = e.target.checked; if (c.visible) c.layer.addTo(map); else map.removeLayer(c.layer); });
   $('#btn-cmp-replace')?.addEventListener('click', loadCompare);
@@ -1883,6 +2801,7 @@ function renderCompare() {
 }
 
 let updateTimer = null;
+/** Re-render everything that depends on the plan, batched so rapid changes render once. */
 function scheduleUpdate() {
   clearTimeout(updateTimer);
   updateTimer = setTimeout(() => {
@@ -1895,14 +2814,15 @@ function scheduleUpdate() {
 let cmpTimer = null;
 function renderCompareSoon() { clearTimeout(cmpTimer); cmpTimer = setTimeout(() => { if (!$('#panel-compare').hidden) renderCompare(); }, 200); }
 
-/* ------------------------------------------------------------------ *
- * Wiring
- * ------------------------------------------------------------------ */
+/* ================================================================== *
+ * §20 Wiring and start-up
+ *     Button handlers and initializeApp(), the start-up sequence.
+ * ================================================================== */
 $('#plan-name').addEventListener('input', e => { state.plan.name = e.target.value || 'Untitled plan'; renderCompareSoon(); autosave(); });
 $('#plan-name').addEventListener('change', () => commit());
 $('#btn-draw').addEventListener('click', () => {
   map.pm.enableDraw('Polygon', { snappable: true });
-  toast('Click the map to place corners, and click the first corner to finish. Move the cursor to the map edge to pan; Ctrl+Z removes the last corner.');
+  toast('Click the map to place corners, and click the first corner to finish. Zoomed in, corners snap to street centerlines (hold Alt to place one freely). Move the cursor to the map edge to pan; Ctrl+Z removes the last corner.', 'info', 8000);
 });
 $('#btn-import').addEventListener('click', () => importAreas());
 $('#btn-open-plan').addEventListener('click', () => importAreas({ replace: true }));
@@ -1911,6 +2831,8 @@ $('#btn-undo').addEventListener('click', undo);
 $('#btn-redo').addEventListener('click', redo);
 $('#toggle-all-areas').addEventListener('change', e => { state.plan.areas.forEach(a => setAreaVisible(a, e.target.checked)); renderPlanList(); autosave(); });
 $('#toggle-edge-pan').addEventListener('change', e => { edgePan.enabled = e.target.checked; });
+$('#toggle-street-snap').addEventListener('change', e => { streets.snapOn = e.target.checked; streets.shownKey = ''; refreshStreetSnap(); });
+$('#toggle-block-snap').addEventListener('change', e => { streets.blockOn = e.target.checked; });
 $('#btn-new-plan').addEventListener('click', async () => {
   if (changedAreas().length && !confirm('Reset to the original planning polygons? Your new and edited polygons will be cleared (you can still undo this).')) return;
   clearPlan();
@@ -1919,6 +2841,10 @@ $('#btn-new-plan').addEventListener('click', async () => {
   scheduleUpdate(); commit();
 });
 
+/**
+ * Start-up: draw the layer list, load layers and demographic data, restore the
+ * last session (or load the base polygons), then fit the map to the plan.
+ */
 async function initializeApp() {
   renderSlots();
   await Promise.all([loadBaseLayers(), loadOutreachZips()]);
@@ -1946,7 +2872,9 @@ async function initializeApp() {
 }
 
 initializeApp();
-window.__planner = { state, map, addArea, analyze, undo, redo, history, picker, copyArea, savePlan, planFeatureCollection, changedAreas, openPlan };
+// Handy from the browser console when debugging, e.g. __planner.state.plan.areas
+window.__planner = { state, map, addArea, analyze, undo, redo, history, picker, copyArea, savePlan, planFeatureCollection, changedAreas, openPlan,
+  snapArea, snapToBlocks, setPanelCollapsed, refreshPoi, renderCompare };
 })();
 </script>
 </body>
