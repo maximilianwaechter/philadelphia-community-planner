@@ -22,7 +22,7 @@
     §8  Edge panning ......... move the map while drawing near its edge
     §9  Reference layers ..... boundary and point layers listed in SLOTS
     §10 Places of interest ... OpenStreetMap POIs with Google-Maps-style popups
-    §11 Street centerlines ... snap-while-drawing and snap-to-whole-blocks
+    §11 Street centerlines ... citywide centerlines, corner snapping, Snap-to-blocks button
     §12 Vacant buildings ..... City vacancy indicators for the selected area
     §13 Demographic model .... load ACS tracts + building weights
     §14 Analysis ............. polygon -> demographic numbers
@@ -109,6 +109,9 @@
   .key { width: 14px; height: 14px; margin-top: 4px; border: 2px solid var(--c); border-radius: 2px; background: color-mix(in srgb, var(--c) var(--fillpct, 20%), transparent); }
   .key.point { border-radius: 50%; background: var(--c); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--c); }
   .key.heat { border: 0; border-radius: 50%; background: radial-gradient(circle, var(--c), transparent 70%); }
+  /* layers colored per feature (NACs): show a little multi-color swatch */
+  .key.point.multi { border: 2px solid #fff; box-shadow: 0 0 0 1px var(--ink-2); }
+  .key.multi { border: 2px dotted var(--ink-2); background: conic-gradient(#B5487D 0 25%, #2A9D8F 0 50%, #FFA600 0 75%, #3D5A80 0); }
   .slot h2 { margin: 0; font-size: 15px; font-weight: 600; }
   .slot .help { margin: 1px 0 0; font-size: 13px; color: var(--ink-2); }
   .slot .status { margin: 8px 0 0; font-size: 13.5px; }
@@ -332,8 +335,7 @@
           </div>
           <label class="inline"><input type="checkbox" id="toggle-all-areas" checked> Show all planning polygons</label>
           <label class="inline"><input type="checkbox" id="toggle-edge-pan" checked> Move the map when the cursor reaches its edge while drawing</label>
-          <label class="inline"><input type="checkbox" id="toggle-street-snap" checked> Snap corners to street centerlines while drawing (zoom in to see them)</label>
-          <label class="inline"><input type="checkbox" id="toggle-block-snap" checked> Snap finished polygons to whole street blocks</label>
+          <label class="inline"><input type="checkbox" id="toggle-street-snap"> Show street centerlines and snap corners to them while drawing</label>
           <p class="fieldnote" id="street-status"></p>
           <label class="inline"><input type="checkbox" id="toggle-vacant" checked> Show possibly vacant buildings in the selected area</label>
           <p class="fieldnote" id="vacancy-status"></p>
@@ -391,8 +393,13 @@ const NAME_FIXES = { 'Line 1': 'CHOICE Neighborhood - North Central' };
 const C = {
   plan: '#6B2C91', harbor: '#1F6F78', cherry: '#9D2235', police: '#27407A',
   amber: '#C98A1B', city: '#4E5968', council: '#6F7A8A', ward: '#5B4B8A', division: '#8A7FA8', zip: '#2F6F5E', heat: '#B42318',
-  nac: '#B5487D', street: '#5B6577',
+  nac: '#B5487D', nacNone: '#8A94A6', street: '#5B6577',
 };
+
+// One color per Neighborhood Advisory Committee, so neighboring NAC areas are easy to tell apart.
+const NAC_PALETTE = ['#B5487D', '#2A9D8F', '#E76F51', '#3D5A80', '#8AB17D', '#7A5195', '#FFA600', '#457B9D', '#C06C84', '#2E7D32', '#EF5675', '#6C5B7B'];
+// Selected polygon highlight (any planning polygon or clicked boundary).
+const SELECT_HALO = '#FFFFFF', SELECT_COLOR = '#F2B705';
 
 const ordinal = n => { n = Number(n); const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
 const divisionLabel = v => { const s = String(v ?? '').padStart(4, '0'); return `Ward ${Number(s.slice(0, 2))}, Division ${Number(s.slice(2))}`; };
@@ -414,6 +421,73 @@ function nacContactHtml(p) {
     href && `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(web.replace(/^https?:\/\//i, '').replace(/\/$/, ''))}</a>`,
   ];
   return lines.filter(Boolean).map(l => `<div>${l}</div>`).join('');
+}
+
+/* ---------- linking point layers to the polygons they belong to ---------- */
+const STOP_WORDS = new Set(['the', 'of', 'and', 'inc', 'cdc', 'corp', 'corporation', 'association', 'assn', 'community', 'philadelphia',
+  'phila', 'greater', 'center', 'council', 'de', 'en', 'office', 'nac', 'neighborhood', 'action', 'partners', 'development', 'satelite', 'satellite']);
+const nameWords = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean);
+/** Do two organization names plausibly refer to the same group? (shared distinctive word, or one is the other's acronym) */
+function sameOrganization(a, b) {
+  const wa = nameWords(a), wb = nameWords(b);
+  const key = w => w.filter(x => !STOP_WORDS.has(x) && x.length > 2);
+  const acronym = w => w.filter(x => !['of', 'and', 'the', 'de', 'en'].includes(x)).map(x => x[0]).join('');
+  const ka = new Set(key(wa));
+  if (key(wb).some(x => ka.has(x))) return true;
+  const acrA = acronym(wb), acrB = acronym(wa);
+  return (acrA.length >= 3 && wa.includes(acrA)) || (acrB.length >= 3 && wb.includes(acrB));
+}
+
+/**
+ * The NAC service area an office belongs to: the NAC polygon it sits in.
+ * matched = the polygon's organization name agrees with the office's; otherwise
+ * the office is shown in gray (e.g. an office whose group has no service area).
+ */
+function nacAreaFor(f) {
+  const e = state.layers.nac;
+  if (!e || !e.fc) return null;
+  if (f._nacArea === undefined) {
+    let area = null;
+    try { area = e.fc.features.find(a => isPoly(a.geometry) && turf.booleanPointInPolygon(f, a)) || null; } catch { area = null; }
+    f._nacArea = area ? { area, matched: sameOrganization((f.properties || {}).ORGANIZATION, (area.properties || {}).ORGANIZATION) } : { area: null, matched: false };
+  }
+  return f._nacArea;
+}
+function nacOfficeAreaNote(f, short = false) {
+  const m = nacAreaFor(f);
+  if (!m) return '';
+  const name = m.area ? tidy(m.area.properties.ORGANIZATION) : '';
+  const text = m.matched ? `NAC area: ${esc(name)}` : m.area ? `Inside ${esc(name)}'s area (no matching NAC area)` : 'Outside every NAC area';
+  return short ? text : `<div style="margin-top:6px;color:#505B6E">${text}</div>`;
+}
+
+/**
+ * The planning polygon that is a school's catchment area. Matched through the
+ * shared KML folder (FolderPath) with the base polygons, then by a distinctive
+ * name word, then by any "catchment" polygon the school sits in. Returns the
+ * live plan area, so a school follows its catchment's color when it is restyled.
+ */
+function catchmentAreaFor(f) {
+  const p = f.properties || {}, areas = state.plan.areas;
+  const base = p.FolderPath && state.baseAreas.find(b => b.folder === p.FolderPath);
+  let a = base && areas.find(x => x.origin === 'base' && String(x.baseKey) === String(base.key));
+  if (!a) {
+    const words = nameWords(p.Name).filter(w => !STOP_WORDS.has(w) && w.length > 3 && !['school', 'public', 'mary', 'paul'].includes(w));
+    a = areas.find(x => /catchment/i.test(x.name) && words.some(w => nameWords(x.name).includes(w)));
+  }
+  if (!a) {
+    try { a = areas.find(x => /catchment/i.test(x.name) && turf.booleanPointInPolygon(f, feature(x.geometry))); } catch { a = null; }
+  }
+  return a || null;
+}
+
+/** Recolor point layers whose colors come from other layers (call after plan or layer colors change). Cheap. */
+function restyleLinkedPoints() {
+  for (const slot of SLOTS) {
+    const e = state.layers[slot.key];
+    if (slot.kind !== 'point' || !slot.featureColor || !e || !e.leaflet) continue;
+    e.leaflet.eachLayer(l => { if (l instanceof L.CircleMarker) l.setStyle({ fillColor: featureColorOf(slot, l.feature) }); });
+  }
 }
 
 /*
@@ -462,7 +536,10 @@ const SLOTS = [
   { key: 'nac', title: 'Neighborhood Advisory Committees', kind: 'area', url: 'data/NeighborhoodAdvisoryCommittees.geojson', optional: true,
     visible: false, analyzeOnClick: true, compare: 'Community', labelField: 'ORGANIZATION', labelFmt: tidy, zoomLabels: 13,
     infoCard: f => nacContactHtml(f.properties || {}),
-    style: { color: C.nac, fillOpacity: 0.05, lineOpacity: 0.9, weight: 1.8 }, help: 'Service areas of the City-funded NACs. Click one for its demographics and contact.' },
+    // Each NAC gets its own color (by OBJECTID). Picking a color with Style switches the layer to one color.
+    featureColor: f => NAC_PALETTE[(Number((f.properties || {}).OBJECTID) || 0) % NAC_PALETTE.length],
+    style: { color: C.nac, fillOpacity: 0.16, lineOpacity: 0.95, weight: 2.2, dashArray: '1 5', lineCap: 'round' },
+    help: 'Service areas of the City-funded NACs, one color each. Click one for its demographics and contact.' },
   { key: 'police', title: 'TU Police Boundary', kind: 'area', url: 'data/TU_police_boundary.geojson', visible: true, analyzeOnClick: true,
     compare: 'Temple', labelField: 'Campus',
     style: { color: C.police, fillOpacity: 0.035, lineOpacity: 0.95, weight: 2.2, dashArray: '7 5' }, help: 'Temple University police patrol boundary.' },
@@ -477,10 +554,17 @@ const SLOTS = [
     popup: f => stationPopup(f),
     style: { color: C.police, fillOpacity: 1, radius: 6.5 }, help: 'Hover for the district; click for the address.' },
   { key: 'schools', title: 'Schools of Interest', kind: 'point', url: 'data/Schools_of_Interest.geojson', visible: true,
-    style: { color: C.amber, fillOpacity: 1, radius: 5 }, help: 'Schools used as planning reference points.' },
+    // Each school takes the current color of its catchment-area planning polygon (see catchmentAreaFor).
+    featureColor: f => { const a = catchmentAreaFor(f); return a ? a.color : C.amber; },
+    tipExtra: f => { const a = catchmentAreaFor(f); return a ? `Catchment: ${esc(a.name)}` : 'No catchment polygon in this plan'; },
+    style: { color: C.amber, fillOpacity: 1, radius: 6 }, help: 'Schools used as planning reference points, colored like their catchment area.' },
   { key: 'nacOffices', title: 'NAC Offices', kind: 'point', url: 'data/NAC_Offices.geojson', optional: true, visible: false,
-    labelField: 'ORGANIZATION', labelFmt: tidy, popup: f => nacContactHtml(f.properties || {}),
-    style: { color: C.nac, fillOpacity: 1, radius: 6 }, help: 'Neighborhood Advisory Committee offices. Click one for the coordinator and contact.' },
+    labelField: 'ORGANIZATION', labelFmt: tidy,
+    popup: f => nacContactHtml(f.properties || {}) + nacOfficeAreaNote(f),
+    // Each office takes the color of the NAC area it belongs to (see nacAreaFor); gray if none matches.
+    featureColor: f => { const m = nacAreaFor(f); return m && m.matched ? featureColorOf(SLOTS.find(s => s.key === 'nac'), m.area) : C.nacNone; },
+    tipExtra: f => nacOfficeAreaNote(f, true),
+    style: { color: C.nac, fillOpacity: 1, radius: 6.5 }, help: 'Neighborhood Advisory Committee offices, colored like their NAC area. Click one for the coordinator and contact.' },
 
   /* ---- live / derived layers ---- */
   { key: 'poi', title: 'Places of interest', kind: 'poi', optional: true, visible: false,
@@ -1022,13 +1106,28 @@ function labelOf(slot, f, field) {
   return slot && slot.labelFmt ? slot.labelFmt(v) : String(v);
 }
 
-function slotPathStyle(slot) {
-  const s = styleOf(slot);
-  return { color: s.color, weight: s.weight ?? 1.5, opacity: s.lineOpacity ?? 1, fillColor: s.color, fillOpacity: s.fillOpacity ?? 0, dashArray: s.dashArray || null };
+/**
+ * True when a layer is drawn with one color per feature (slot.featureColor) rather than a single color.
+ * Choosing a different color with the Style button switches it to single-color.
+ */
+function usesFeatureColors(slot) {
+  if (!slot.featureColor) return false;
+  const picked = (state.layerStyles[slot.key] || {}).color;
+  return !picked || picked.toUpperCase() === String(slot.style.color).toUpperCase();
 }
-function pointStyle(slot) {
+/** Display color of one feature (its own color for per-feature layers, otherwise the layer color). */
+const featureColorOf = (slot, f) => (f && usesFeatureColors(slot) ? slot.featureColor(f) : styleOf(slot).color);
+
+/** Leaflet path style for a polygon or line in a reference layer. Pass the feature for per-feature colors. */
+function slotPathStyle(slot, f) {
+  const s = styleOf(slot), color = featureColorOf(slot, f);
+  return { color, weight: s.weight ?? 1.5, opacity: s.lineOpacity ?? 1, fillColor: color, fillOpacity: s.fillOpacity ?? 0,
+    dashArray: s.dashArray || null, lineCap: s.lineCap || 'round' };
+}
+/** Circle-marker style for a point layer. Pass the feature for per-feature colors. */
+function pointStyle(slot, f) {
   const s = styleOf(slot);
-  return { pane: 'pointsPane', radius: s.radius ?? 5, color: '#fff', weight: 1.5, opacity: s.fillOpacity ?? 1, fillColor: s.color, fillOpacity: s.fillOpacity ?? 1 };
+  return { pane: 'pointsPane', radius: s.radius ?? 5, color: '#fff', weight: 1.5, opacity: s.fillOpacity ?? 1, fillColor: featureColorOf(slot, f), fillOpacity: s.fillOpacity ?? 1 };
 }
 function slotPane(slot) {
   return { pane: 'refPane', renderer: refRenderer };
@@ -1054,7 +1153,7 @@ function tipFor(slot, f) {
     if (n) label += `<br><span style="color:#505B6E">${n.toLocaleString()} outreach member${n === 1 ? '' : 's'}</span>`;
     return label;
   }
-  return esc(label);
+  return slot.tipExtra ? `${esc(label)}<br><span style="color:#505B6E">${slot.tipExtra(f)}</span>` : esc(label);
 }
 
 function stationPopup(f) {
@@ -1074,17 +1173,18 @@ function buildLeaflet(slot, entry) {
     pmIgnore: true, snapIgnore: true,
     pane: pane.pane, renderer: pane.renderer,
     // pane/renderer go on the GeoJSON options (used for polygons); points pick their own pane
-    style: f => (f.geometry && /Point/.test(f.geometry.type) ? pointStyle(slot) : slotPathStyle(slot)),
-    pointToLayer: (f, ll) => L.circleMarker(ll, { ...pointStyle(slot), pmIgnore: true, snapIgnore: true }),
+    style: f => (f.geometry && /Point/.test(f.geometry.type) ? pointStyle(slot, f) : slotPathStyle(slot, f)),
+    pointToLayer: (f, ll) => L.circleMarker(ll, { ...pointStyle(slot, f), pmIgnore: true, snapIgnore: true }),
     onEachFeature: (f, l) => {
       l.bindTooltip(() => tipFor(slot, f), { sticky: slot.kind !== 'point', direction: 'top', className: 'ref-tip' });
       if (slot.popup) l.bindPopup(() => slot.popup(f));
       if (slot.analyzeOnClick && isPoly(f.geometry)) {
         l.on('click', () => {
           if (pmBusy()) return;   // never interrupt drawing or editing
+          state.selected = null;   // a boundary is now the selection, not a planning polygon
           state.analysisSelection = { type: 'reference', name: featureName(slot, f, entry), geometry: f.geometry,
-            info: slot.infoCard ? slot.infoCard(f) : '', color: styleOf(slot).color };
-          renderDemographics(); showTab('demographics');
+            info: slot.infoCard ? slot.infoCard(f) : '', color: featureColorOf(slot, f) };
+          showTab('demographics'); scheduleUpdate();
         });
       }
     },
@@ -1104,7 +1204,7 @@ function labelPoints(slot, fc, field) {
     const text = labelOf(slot, f, field);
     if (!text || !isPoly(f.geometry)) return null;
     let pt; try { pt = turf.pointOnFeature(f).geometry.coordinates; } catch { return null; }
-    return { ll: L.latLng(pt[1], pt[0]), text };
+    return { ll: L.latLng(pt[1], pt[0]), text, f };
   }).filter(Boolean);
 }
 function updateLabels() {
@@ -1114,9 +1214,9 @@ function updateLabels() {
     if (!e || !e.labels) continue;
     e.labels.clearLayers();
     if (!e.visible || z < slot.zoomLabels) continue;
-    const color = styleOf(slot).color;
     for (const p of e.labelPts) {
       if (!b.contains(p.ll)) continue;
+      const color = featureColorOf(slot, p.f);
       e.labels.addLayer(L.marker(p.ll, { pane: 'labelsPane', interactive: false, keyboard: false, pmIgnore: true, snapIgnore: true,
         icon: L.divIcon({ className: 'bnd-label', html: `<span style="--lc:${color}">${esc(p.text)}</span>`, iconSize: [0, 0] }) }));
     }
@@ -1148,10 +1248,10 @@ function applySlotStyle(key) {
   if (slot.kind === 'poi') { drawPoi(); return; }
   const s = styleOf(slot);
   e.leaflet.eachLayer(l => {
-    if (l instanceof L.CircleMarker) { l.setStyle({ fillColor: s.color, fillOpacity: s.fillOpacity, opacity: s.fillOpacity }); l.setRadius(s.radius ?? 5); }
-    else l.setStyle(slotPathStyle(slot));
+    if (l instanceof L.CircleMarker) { l.setStyle({ fillColor: featureColorOf(slot, l.feature), fillOpacity: s.fillOpacity, opacity: s.fillOpacity }); l.setRadius(s.radius ?? 5); }
+    else l.setStyle(slotPathStyle(slot, l.feature));
   });
-  updateLabels(); renderSlots();
+  restyleLinkedPoints(); updateLabels(); renderSlots();
 }
 
 const geoCache = new Map();
@@ -1251,6 +1351,7 @@ async function loadBaseLayers() {
     }
   }));
   reorderRefLayers();
+  restyleLinkedPoints();   // NAC offices need the NAC areas, which may have loaded after them
   const city = state.layers.city && state.layers.city.leaflet;
   if (city && city.getBounds().isValid() && !state.plan.areas.length) map.fitBounds(city.getBounds(), { padding: [18, 18], maxZoom: 12 });
 }
@@ -1441,103 +1542,154 @@ map.on('moveend', () => { clearTimeout(poiTimer); poiTimer = setTimeout(refreshP
 /* ================================================================== *
  * §11 Street centerlines
  *     Planning areas are meant to hold households, so their edges
- *     should run down the middle of streets, not through houses. Two
- *     tools use the City's Street_Centerline layer for that:
+ *     should run down the middle of streets, not through houses. The
+ *     City's Street_Centerline layer (the whole city, ~40,000 segments)
+ *     is loaded once, the first time it is needed, and used two ways:
  *
- *     1. Snap while drawing: at street zoom, centerlines are drawn
- *        faintly and Geoman snaps corners to them (hold Alt to place a
- *        corner freely).
- *     2. Snap to whole blocks: the centerlines are turned into block
- *        polygons (turf.polygonize; each block is the area enclosed by
- *        its surrounding streets), every block with at least half its
- *        area inside the drawn polygon is kept, and the kept blocks are
+ *     1. "Show street centerlines and snap corners" (Plan tab, off by
+ *        default): draws every centerline in the city, and while you
+ *        draw, edit or cut, corners snap to the nearest one (hold Alt
+ *        to place a corner freely).
+ *     2. The Snap button on a planning polygon: the centerlines are
+ *        turned into block polygons (turf.polygonize; each block is the
+ *        area enclosed by its surrounding streets), every block with at
+ *        least half its area inside is kept, and the kept blocks are
  *        dissolved into the new outline.
+ *
+ *     For speed, Geoman only gets the segments near the current view as
+ *     snap targets (an invisible copy), never all 40,000 at once.
  * ================================================================== */
 const STREET_URL = `${CITY_GIS}/Street_Centerline/FeatureServer/0/query`;
-const STREET_TILE = 0.01;          // tile size in degrees for caching centerline requests
-const STREET_MIN_ZOOM = 16;        // centerlines appear for snapping at this zoom and closer
+const STREET_GRID = 0.01;          // spatial index cell size in degrees (~1 km)
+const STREET_SNAP_MAX = 4000;      // more segments than this in view = too zoomed out to snap
 const BLOCK_SHARE = 0.5;           // a block joins the polygon when this share of its area is inside
-const BLOCK_BUFFER_KM = 0.4;       // fetch streets this far beyond the polygon so edge blocks close
-const BLOCK_MAX_SQMI = 25;         // larger polygons are refused (it would download most of the city)
+const BLOCK_BUFFER_KM = 0.4;       // use streets this far beyond the polygon so edge blocks close
+const BLOCK_MAX_SQMI = 25;         // larger polygons are refused (too slow to rebuild)
 
 const streets = {
-  snapOn: true, blockOn: true,
-  tiles: new Map(),                // tile key -> Promise<GeoJSON line features>
-  group: L.layerGroup(),           // the faint centerlines shown while drawing
-  shownKey: '', status: '',
+  on: false,                       // the Plan-tab checkbox
+  all: null,                       // every centerline segment (GeoJSON features), once loaded
+  index: null,                     // grid cell "x,y" -> indexes into streets.all
+  boxes: null,                     // bounding box of each segment, same order as streets.all
+  loading: null,                   // Promise while the city download is running
+  display: null,                   // the visible citywide layer (one canvas)
+  snapGroup: L.layerGroup(),       // invisible in-view copies Geoman snaps to
+  snapKey: '',
 };
 
-/** Fetch one tile of centerlines (cached). Large tiles are paged 2,000 segments at a time. */
-function streetTile(x, y) {
-  const key = `${x},${y}`;
-  if (!streets.tiles.has(key)) {
-    const p = (async () => {
-      const env = { xmin: x * STREET_TILE, ymin: y * STREET_TILE, xmax: (x + 1) * STREET_TILE, ymax: (y + 1) * STREET_TILE, spatialReference: { wkid: 4326 } };
-      const feats = [];
-      for (let offset = 0, i = 0; i < 10; i++) {
-        const params = new URLSearchParams({
-          where: '1=1', geometry: JSON.stringify(env), geometryType: 'esriGeometryEnvelope', inSR: '4326',
-          spatialRel: 'esriSpatialRelIntersects', outFields: 'objectid,stname,class', outSR: '4326', f: 'geojson',
-          orderByFields: 'objectid', resultOffset: String(offset), resultRecordCount: '2000',
-        });
-        const j = await fetchJSON(`${STREET_URL}?${params}`);
-        const batch = (j.features || []).filter(f => f.geometry && /LineString/.test(f.geometry.type));
-        feats.push(...batch); offset += (j.features || []).length;
-        if (!(j.features || []).length || !(j.exceededTransferLimit || (j.properties && j.properties.exceededTransferLimit))) break;
-      }
-      return feats;
-    })();
-    p.catch(() => streets.tiles.delete(key));   // let a failed tile be retried later
-    streets.tiles.set(key, p);
-  }
-  return streets.tiles.get(key);
+/** Download every centerline in the city (once per session), 2,000 segments per request, and index them. */
+function loadCityStreets() {
+  if (streets.all) return Promise.resolve(streets.all);
+  if (streets.loading) return streets.loading;
+  streets.loading = (async () => {
+    const feats = [];
+    for (let offset = 0, i = 0; i < 60; i++) {
+      const params = new URLSearchParams({
+        where: '1=1', outFields: 'objectid', outSR: '4326', f: 'geojson', geometryPrecision: '6',
+        orderByFields: 'objectid', resultOffset: String(offset), resultRecordCount: '2000',
+      });
+      const j = await fetchJSON(`${STREET_URL}?${params}`);
+      const batch = j.features || [];
+      feats.push(...batch.filter(f => f.geometry && /LineString/.test(f.geometry.type)));
+      offset += batch.length;
+      setStreetStatus(`Loading street centerlines… ${feats.length.toLocaleString()} segments so far.`);
+      if (!batch.length || !(j.exceededTransferLimit || (j.properties && j.properties.exceededTransferLimit))) break;
+    }
+    if (!feats.length) throw new Error('the City returned no street centerlines');
+    // Grid index: each segment is listed in every ~1 km cell its bounding box touches.
+    const index = new Map(), boxes = feats.map(f => turf.bbox(f));
+    boxes.forEach((b, i) => {
+      for (let x = Math.floor(b[0] / STREET_GRID); x <= Math.floor(b[2] / STREET_GRID); x++)
+        for (let y = Math.floor(b[1] / STREET_GRID); y <= Math.floor(b[3] / STREET_GRID); y++) {
+          const k = `${x},${y}`;
+          if (!index.has(k)) index.set(k, []);
+          index.get(k).push(i);
+        }
+    });
+    Object.assign(streets, { all: feats, index, boxes });
+    return feats;
+  })();
+  streets.loading.catch(() => { streets.loading = null; });   // allow a retry after a failure
+  return streets.loading;
 }
 
-/** All centerline segments touching a bounding box [w, s, e, n], each segment once. */
+/** All centerline segments touching a bounding box [w, s, e, n] (loads the city first if needed). */
 async function streetsIn(bb) {
-  const jobs = [];
-  for (let x = Math.floor(bb[0] / STREET_TILE); x <= Math.floor(bb[2] / STREET_TILE); x++)
-    for (let y = Math.floor(bb[1] / STREET_TILE); y <= Math.floor(bb[3] / STREET_TILE); y++) jobs.push([x, y]);
-  // At most 6 requests at a time so a big polygon doesn't flood the City's server.
-  const results = [];
-  for (let i = 0; i < jobs.length; i += 6) results.push(...await Promise.all(jobs.slice(i, i + 6).map(([x, y]) => streetTile(x, y))));
-  const byId = new Map();
-  for (const f of results.flat()) byId.set(f.id ?? (f.properties || {}).objectid ?? JSON.stringify(f.geometry.coordinates[0]), f);
-  return [...byId.values()];
+  await loadCityStreets();
+  const hits = new Set();
+  for (let x = Math.floor(bb[0] / STREET_GRID); x <= Math.floor(bb[2] / STREET_GRID); x++)
+    for (let y = Math.floor(bb[1] / STREET_GRID); y <= Math.floor(bb[3] / STREET_GRID); y++)
+      for (const i of streets.index.get(`${x},${y}`) || []) hits.add(i);
+  const out = [];
+  for (const i of hits) {
+    const b = streets.boxes[i];
+    if (b[2] >= bb[0] && b[0] <= bb[2] && b[3] >= bb[1] && b[1] <= bb[3]) out.push(streets.all[i]);
+  }
+  return out;
 }
 
-/** Show (or hide) the faint snapping centerlines for the current view. */
-async function refreshStreetSnap() {
-  const active = streets.snapOn && (map.pm.globalDrawModeEnabled() || map.pm.globalEditModeEnabled() || map.pm.globalCutModeEnabled());
-  if (!active || map.getZoom() < STREET_MIN_ZOOM) {
-    streets.group.clearLayers(); streets.shownKey = '';
-    if (map.hasLayer(streets.group)) map.removeLayer(streets.group);
-    setStreetStatus(active ? 'Zoom in to street level to snap corners to street centerlines.' : '');
+const snapToolActive = () => map.pm.globalDrawModeEnabled() || map.pm.globalEditModeEnabled() || map.pm.globalCutModeEnabled();
+
+/** Turn the citywide centerlines (and corner snapping) on or off. */
+async function setStreetsOn(on) {
+  streets.on = on;
+  if (!on) {
+    if (streets.display && map.hasLayer(streets.display)) map.removeLayer(streets.display);
+    clearSnapTargets(); setStreetStatus('');
     return;
   }
-  const b = map.getBounds().pad(0.25), bb = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-  const key = bb.map(v => v.toFixed(3)).join(',');
-  if (key === streets.shownKey) return;
-  streets.shownKey = key;
   try {
-    const lines = await streetsIn(bb);
-    if (streets.shownKey !== key) return;                     // the map moved on while loading
-    streets.group.clearLayers();
-    // snapIgnore:false is what makes Geoman snap to these even though pmIgnore keeps them uneditable.
-    L.geoJSON({ type: 'FeatureCollection', features: lines }, {
-      pane: 'streetPane', interactive: false, pmIgnore: true, snapIgnore: false,
-      style: { color: C.street, weight: 1.6, opacity: 0.8, dashArray: '3 3' },
-    }).addTo(streets.group);
-    if (!map.hasLayer(streets.group)) map.addLayer(streets.group);
-    setStreetStatus('Corners snap to the dashed street centerlines. Hold Alt to place a corner freely.');
+    await loadCityStreets();
+    if (!streets.on) return;                                 // switched off while loading
+    if (!streets.display) {
+      // One canvas for ~40,000 lines; SVG would be far too slow at this size.
+      streets.display = L.geoJSON({ type: 'FeatureCollection', features: streets.all }, {
+        renderer: L.canvas({ pane: 'streetPane', padding: 0.2 }), interactive: false, pmIgnore: true, snapIgnore: true,
+        style: { color: C.street, weight: 1, opacity: 0.6 },
+      });
+    }
+    if (!map.hasLayer(streets.display)) streets.display.addTo(map);
+    refreshSnapTargets();
   } catch (err) {
-    streets.shownKey = '';
-    setStreetStatus(`Couldn't load street centerlines: ${err.message}.`);
+    console.warn('Street centerlines failed to load', err);
+    setStreetStatus(`Couldn't load street centerlines: ${err.message}. Turn the checkbox off and on to retry.`);
   }
 }
-function setStreetStatus(text) { streets.status = text; const el = $('#street-status'); if (el) el.textContent = text; }
-map.on('pm:globaldrawmodetoggled pm:globaleditmodetoggled pm:globalcutmodetoggled', refreshStreetSnap);
-map.on('moveend', () => { if (streets.snapOn) refreshStreetSnap(); });
+
+/** Give Geoman the segments near the current view to snap to, while a drawing tool is active. */
+async function refreshSnapTargets() {
+  if (!streets.on || !streets.all) return;
+  if (!snapToolActive()) {
+    clearSnapTargets();
+    setStreetStatus(`${streets.all.length.toLocaleString()} street centerlines shown. Corners snap to them while you draw or edit (hold Alt to place a corner freely).`);
+    return;
+  }
+  const b = map.getBounds().pad(0.3), bb = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  const key = bb.map(v => v.toFixed(3)).join(',');
+  if (key === streets.snapKey) return;
+  streets.snapKey = key;
+  const segs = await streetsIn(bb);
+  if (streets.snapKey !== key) return;                      // the map moved on meanwhile
+  streets.snapGroup.clearLayers();
+  if (segs.length > STREET_SNAP_MAX) {
+    setStreetStatus('Zoom in a little to snap corners to street centerlines.');
+    return;
+  }
+  // Invisible copies: snapIgnore:false makes Geoman snap to them; pmIgnore keeps them uneditable.
+  L.geoJSON({ type: 'FeatureCollection', features: segs }, {
+    pane: 'streetPane', interactive: false, pmIgnore: true, snapIgnore: false, style: { opacity: 0, weight: 1 },
+  }).addTo(streets.snapGroup);
+  if (!map.hasLayer(streets.snapGroup)) map.addLayer(streets.snapGroup);
+  setStreetStatus('Corners snap to street centerlines. Hold Alt to place a corner freely.');
+}
+function clearSnapTargets() {
+  streets.snapKey = '';
+  streets.snapGroup.clearLayers();
+  if (map.hasLayer(streets.snapGroup)) map.removeLayer(streets.snapGroup);
+}
+function setStreetStatus(text) { const el = $('#street-status'); if (el) el.textContent = text; }
+map.on('pm:globaldrawmodetoggled pm:globaleditmodetoggled pm:globalcutmodetoggled', refreshSnapTargets);
+map.on('moveend', () => { if (streets.on) refreshSnapTargets(); });
 
 /**
  * Rebuild a polygon from whole street blocks.
@@ -1574,7 +1726,7 @@ async function snapToBlocks(geometry) {
 async function snapArea(a) {
   if (!a) return;
   const rev = a.rev;
-  toast(`Snapping “${a.name}” to street blocks…`, 'info', 2500);
+  toast(streets.all ? `Snapping “${a.name}” to street blocks…` : `Loading the city's street centerlines (first time only), then snapping “${a.name}”…`, 'info', 3500);
   try {
     const r = await snapToBlocks(a.geometry);
     if (!state.plan.areas.includes(a) || a.rev !== rev) return;   // deleted or edited while we worked
@@ -1993,6 +2145,7 @@ function restyleArea(a) {
   if (!a.layer) return;
   a.layer.setStyle(areaStyle(a));
   a.layer.setTooltipContent(areaLabel(a));
+  restyleLinkedPoints();   // a catchment's school recolors live while the picker is open
 }
 
 /**
@@ -2080,19 +2233,18 @@ function areasFromFC(fc) {
       visible: p.visible !== false && p.visible !== 'false',
       baseId: p.base_id != null ? String(p.base_id) : null,
       key: String(p.OBJECTID ?? p.objectid ?? f.id ?? i + 1),
+      folder: p.FolderPath || null,     // KML folder; links schools to their catchment polygon
     });
   });
   return { areas: out, converted, skipped };
 }
 
-// A finished drawing becomes a planning polygon (Geoman's own layer is swapped for ours),
-// then optionally snaps to whole street blocks as a second, undoable step.
+// A finished drawing becomes a planning polygon (Geoman's own layer is swapped for ours).
 map.on('pm:create', e => {
   const g = e.layer.toGeoJSON().geometry;
   map.removeLayer(e.layer);
-  const a = addArea(null, g);
+  addArea(null, g);
   showTab('plan');
-  if (streets.blockOn) snapArea(a);
 });
 map.on('pm:remove', e => { if (e.layer && e.layer._areaId) removeArea(e.layer._areaId, { fromMap: true }); });
 map.on('pm:cut', e => {
@@ -2425,6 +2577,7 @@ function showTab(name) {
   if (isPanelCollapsed()) setPanelCollapsed(false);   // a map click that opens a tab should show it
   if (name === 'demographics') renderDemographics();
   if (name === 'compare') renderCompare(); else clearCompareHighlight();
+  drawSelectionHighlight();   // hidden on the Compare tab, shown everywhere else
 }
 $$('.tab').forEach(t => t.addEventListener('click', () => showTab(t.id.replace('tab-', ''))));
 
@@ -2434,7 +2587,7 @@ const HEAT_LABELS = { total: 'All members', active: 'Active', disengaged: 'Disen
 function renderSlots() {
   $('#slots').innerHTML = SLOTS.map(s => {
     const e = state.layers[s.key], st = styleOf(s);
-    const keyCls = s.kind === 'point' || s.kind === 'poi' ? 'key point' : s.kind === 'heat' ? 'key heat' : 'key';
+    const keyCls = (s.kind === 'point' || s.kind === 'poi' ? 'key point' : s.kind === 'heat' ? 'key heat' : 'key') + (usesFeatureColors(s) ? ' multi' : '');
     let body = `<p class="help">${esc(s.help)}</p>`;
     if (e && s.kind === 'poi') {
       const cats = POI_CATEGORIES.map(c => `<option value="${c.id}" ${c.id === e.category ? 'selected' : ''}>${esc(c.label)}</option>`).join('');
@@ -2587,9 +2740,60 @@ function analysisResult() {
   return { name: 'Whole plan', r: planStats('plan'), key: '' };
 }
 
+/* ---------- selection highlight ----------
+ * Whatever the Demographics tab is showing (one planning polygon or a clicked
+ * boundary) gets a white halo with a gold outline on top of everything else,
+ * so it is obvious which shape the numbers describe. It is hidden while the
+ * Compare tab is open, which draws its own A/B outlines. Esc or the
+ * "Clear selection" button returns to the whole plan.
+ */
+const selHighlight = L.layerGroup();
+let selHighlightKey = '';
+
+/** The geometry and a cache key for the current selection, or null for "whole plan". */
+function selectionShape() {
+  const sel = state.analysisSelection || {};
+  if (sel.type === 'reference' && sel.geometry) return { key: `r:${sel.name}:${JSON.stringify(sel.geometry).length}`, geometry: sel.geometry };
+  if (sel.type === 'plan') {
+    const a = state.plan.areas.find(x => x.id === sel.id);
+    if (a && a.visible !== false) return { key: `p:${a.id}:${a.rev}`, geometry: a.geometry };
+  }
+  return null;
+}
+
+/** Draw (or remove) the highlight. Cheap to call often: it only redraws when the selection changes. */
+function drawSelectionHighlight() {
+  const shape = $('#panel-compare').hidden ? selectionShape() : null;
+  const key = shape ? shape.key : '';
+  if (key === selHighlightKey) return;
+  selHighlightKey = key;
+  selHighlight.clearLayers();
+  if (!shape) { if (map.hasLayer(selHighlight)) map.removeLayer(selHighlight); return; }
+  const opts = { pane: 'highlightPane', interactive: false, pmIgnore: true, snapIgnore: true };
+  // Two strokes: a wide white halo so the outline reads on any basemap, then the gold line and a light tint.
+  L.geoJSON(feature(shape.geometry), { ...opts, style: { color: SELECT_HALO, weight: 9, opacity: 0.85, fill: false, lineJoin: 'round' } }).addTo(selHighlight);
+  L.geoJSON(feature(shape.geometry), { ...opts, style: { color: SELECT_COLOR, weight: 4, opacity: 1, fillColor: SELECT_COLOR, fillOpacity: 0.1, lineJoin: 'round' } }).addTo(selHighlight);
+  if (!map.hasLayer(selHighlight)) map.addLayer(selHighlight);
+}
+
+/** Go back to "whole plan": no polygon selected, no highlight. */
+function clearSelection() {
+  state.selected = null;
+  state.analysisSelection = { type: 'whole' };
+  scheduleUpdate();
+}
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || pmBusy()) return;                                 // Esc also cancels drawing; leave that alone
+  const t = e.target;
+  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+  if (document.querySelector('.picker:not([hidden])') || document.querySelector('.leaflet-popup')) return;   // Esc closes those first
+  if (state.analysisSelection.type !== 'whole') clearSelection();
+});
+
 /** The Demographics tab. */
 function renderDemographics() {
   refreshVacancy();
+  drawSelectionHighlight();
   const selectEl = $('#demo-scope');
   const cur = analysisResult();
   const refOption = state.analysisSelection.type === 'reference' ? `<option value="__reference__" selected>${esc(state.analysisSelection.name || 'Selected map polygon')}</option>` : '';
@@ -2599,11 +2803,13 @@ function renderDemographics() {
   const summary = cur.r.demo && cur.r.demo.buildingsUsed ? `${sqmi(cur.r.sqmi)} • ${cur.r.demo.buildingsUsed.toLocaleString()} residential building locations • ${cur.r.demo.tractsUsed.toLocaleString()} ACS tracts` : sqmi(cur.r.sqmi);
   const sel = state.analysisSelection;
   const info = sel.type === 'reference' && sel.info ? `<div class="info-card" style="--c:${esc(sel.color || '')}">${sel.info}</div>` : '';
-  box.innerHTML = `<div class="details-head"><h2>${esc(cur.name)}</h2></div><p class="summary">${summary}</p>${info}
+  const clearBtn = sel.type !== 'whole' ? '<button class="btn quiet small" id="btn-clear-sel" title="Back to the whole plan (Esc)">Clear selection</button>' : '';
+  box.innerHTML = `<div class="details-head"><h2>${esc(cur.name)}</h2>${clearBtn}</div><p class="summary">${summary}</p>${info}
     <p class="summary" id="vacancy-demo" ${vacancy.key && vacancy.text ? '' : 'hidden'}>${esc(vacancy.text)}</p>${statsBlock(cur.r)}
     <p class="note">Household population is modeled building by building from ACS tract totals, OPA unit counts, vacancy, and owner and renter household sizes. Inside a polygon, person counts are split by modeled population, household counts by occupied units, and owner or renter counts by owner or renter units, so every tract still adds up to its ACS total. Percentages are recalculated from those counts; median income, rent and home value are household-weighted averages of tract medians. Outreach members are counted from ~250 m grid cells (a cell on the polygon edge counts by the share inside), so treat small-area counts as approximate; members recorded with only a ZIP code are not included.</p>
     <div class="row" style="margin-top:12px"><button class="btn quiet small" id="btn-csv">Download plan demographics (CSV)</button></div>`;
   $('#btn-csv').addEventListener('click', exportCSV);
+  $('#btn-clear-sel')?.addEventListener('click', clearSelection);
 }
 $('#demo-scope').addEventListener('change', e => {
   const v = e.target.value;
@@ -2806,6 +3012,7 @@ function scheduleUpdate() {
   clearTimeout(updateTimer);
   updateTimer = setTimeout(() => {
     for (const a of state.plan.areas) if (a.layer) a.layer.setStyle(areaStyle(a));
+    restyleLinkedPoints();   // schools follow their catchment polygon's color
     renderPlanList(); renderDemographics();
     if (!$('#panel-compare').hidden) renderCompare();
     autosave();
@@ -2822,7 +3029,7 @@ $('#plan-name').addEventListener('input', e => { state.plan.name = e.target.valu
 $('#plan-name').addEventListener('change', () => commit());
 $('#btn-draw').addEventListener('click', () => {
   map.pm.enableDraw('Polygon', { snappable: true });
-  toast('Click the map to place corners, and click the first corner to finish. Zoomed in, corners snap to street centerlines (hold Alt to place one freely). Move the cursor to the map edge to pan; Ctrl+Z removes the last corner.', 'info', 8000);
+  toast('Click the map to place corners, and click the first corner to finish. With street centerlines turned on, corners snap to them (hold Alt to place one freely). Move the cursor to the map edge to pan; Ctrl+Z removes the last corner.', 'info', 8000);
 });
 $('#btn-import').addEventListener('click', () => importAreas());
 $('#btn-open-plan').addEventListener('click', () => importAreas({ replace: true }));
@@ -2831,8 +3038,7 @@ $('#btn-undo').addEventListener('click', undo);
 $('#btn-redo').addEventListener('click', redo);
 $('#toggle-all-areas').addEventListener('change', e => { state.plan.areas.forEach(a => setAreaVisible(a, e.target.checked)); renderPlanList(); autosave(); });
 $('#toggle-edge-pan').addEventListener('change', e => { edgePan.enabled = e.target.checked; });
-$('#toggle-street-snap').addEventListener('change', e => { streets.snapOn = e.target.checked; streets.shownKey = ''; refreshStreetSnap(); });
-$('#toggle-block-snap').addEventListener('change', e => { streets.blockOn = e.target.checked; });
+$('#toggle-street-snap').addEventListener('change', e => setStreetsOn(e.target.checked));
 $('#btn-new-plan').addEventListener('click', async () => {
   if (changedAreas().length && !confirm('Reset to the original planning polygons? Your new and edited polygons will be cleared (you can still undo this).')) return;
   clearPlan();

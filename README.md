@@ -249,11 +249,12 @@ a private repo needs a paid GitHub plan.
   shown at street zoom. Clicking one opens a place card with Directions,
   Google Maps and Street View links. Right-click anywhere on the map for the
   same Google links for that spot. No API key is needed.
-- **Street-centerline snapping** (Plan tab), using the City's live
+- **Street centerlines** (Plan tab, off by default), from the City's live
   `Street_Centerline` service:
-  - while drawing or editing at street zoom, corners snap to the dashed
-    centerlines (hold Alt to place a corner freely);
-  - finished polygons are rebuilt from whole street blocks: every block with
-    at least half its area inside is kept, so edges run down the middle of
-    streets and never split a row of houses. Undo returns to the hand-drawn
-    outline. The **Snap** button does the same for any existing polygon.
+  - the checkbox shows every centerline in the city (loaded once per
+    session), and while drawing or editing, corners snap to them (hold Alt
+    to place a corner freely);
+  - the **Snap** button on a planning polygon rebuilds it from whole street
+    blocks: every block with at least half its area inside is kept, so edges
+    run down the middle of streets and never split a row of houses. Undo
+    returns to the hand-drawn outline.
