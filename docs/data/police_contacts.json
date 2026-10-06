@@ -1,0 +1,256 @@
+{
+ "as_of": "2026-10-06",
+ "source": "https://www.phillypolice.com/district/districts-list/",
+ "note": "Captains change. Check the district page before reaching out. PPD does not publish PSA lieutenant contacts; PSA popups show their district.",
+ "non_emergency": "311",
+ "districts": {
+  "01": {
+   "name": "1st District",
+   "division": "South",
+   "captain": "Capt. Kelly Robbins",
+   "address": "24th St. & Wolf St., Philadelphia, PA",
+   "phone": "215-686-3010",
+   "email": "police.co_01@phila.gov",
+   "url": "https://www.phillypolice.com/districts/1st-district/"
+  },
+  "02": {
+   "name": "2nd District",
+   "division": "Northeast",
+   "captain": "Capt. Andrew DiSanto",
+   "address": "7306 Castor Ave., Philadelphia, PA",
+   "phone": "215-686-3020",
+   "email": "police.co_02@phila.gov",
+   "url": "https://www.phillypolice.com/districts/2nd-district/"
+  },
+  "03": {
+   "name": "3rd District",
+   "division": "South",
+   "captain": "Capt. George Mullen",
+   "address": "11th St. & Wharton St., Philadelphia, PA",
+   "phone": "215-686-3030",
+   "email": "police.co_03@phila.gov",
+   "url": "https://www.phillypolice.com/districts/3rd-district/"
+  },
+  "05": {
+   "name": "5th District",
+   "division": "Northwest",
+   "captain": "Capt. James Kimrey",
+   "address": "Ridge Ave. & Cinnaminson St., Philadelphia, PA",
+   "phone": "215-686-3050",
+   "email": "police.co_05@phila.gov",
+   "url": "https://www.phillypolice.com/districts/5th-district/"
+  },
+  "07": {
+   "name": "7th District",
+   "division": "Northeast",
+   "captain": "Capt. Steven O'Brien",
+   "address": "Bustleton Ave. & Bowler St., Philadelphia, PA",
+   "phone": "215-686-3070",
+   "email": "police.co_07@phila.gov",
+   "url": "https://www.phillypolice.com/districts/7th-district/"
+  },
+  "08": {
+   "name": "8th District",
+   "division": "Northeast",
+   "captain": "Capt. Nicholas Deblasis",
+   "address": "Academy Rd. & Red Lion Rd., Philadelphia, PA",
+   "phone": "215-686-3080",
+   "email": "police.co_08@phila.gov",
+   "url": "https://www.phillypolice.com/districts/8th-district/"
+  },
+  "09": {
+   "name": "9th District",
+   "division": "Central",
+   "captain": "Capt. David Read",
+   "address": "400 N. Broad St., Philadelphia, PA",
+   "phone": "215-686-3090",
+   "email": "police.co_09@phila.gov",
+   "url": "https://www.phillypolice.com/districts/9th-district/"
+  },
+  "12": {
+   "name": "12th District",
+   "division": "Southwest",
+   "captain": "Capt. Matthew Johnson",
+   "address": "65th St. & Woodland Ave., Philadelphia, PA",
+   "phone": "215-686-3120",
+   "email": "police.co_12@phila.gov",
+   "url": "https://www.phillypolice.com/districts/12th-district/"
+  },
+  "14": {
+   "name": "14th District",
+   "division": "Northwest",
+   "captain": "Capt. Stuart McCoullum",
+   "address": "Haines St. & Germantown Ave., Philadelphia, PA",
+   "phone": "215-686-3140",
+   "email": "police.co_14@phila.gov",
+   "url": "https://www.phillypolice.com/districts/14th-district/"
+  },
+  "15": {
+   "name": "15th District",
+   "division": "Northeast",
+   "captain": "Capt. Marques Newsome",
+   "address": "Harbison Ave. & Levick St., Philadelphia, PA",
+   "phone": "215-686-3150",
+   "email": "police.co_15@phila.gov",
+   "url": "https://www.phillypolice.com/districts/15th-district/"
+  },
+  "16": {
+   "name": "16th District",
+   "division": "Southwest",
+   "captain": "Capt. Amina Brown",
+   "address": "39th St. & Lancaster Ave., Philadelphia, PA",
+   "phone": "215-686-3160",
+   "email": "police.co_16@phila.gov",
+   "url": "https://www.phillypolice.com/districts/16th-district/"
+  },
+  "17": {
+   "name": "17th District",
+   "division": "South",
+   "captain": "Capt. Kenneth McKinney",
+   "address": "20th St. & Federal St., Philadelphia, PA",
+   "phone": "215-686-3170",
+   "email": "police.co_17@phila.gov",
+   "url": "https://www.phillypolice.com/districts/17th-district/"
+  },
+  "18": {
+   "name": "18th District",
+   "division": "Southwest",
+   "captain": "Capt. Joseph Waters",
+   "address": "55th St. & Pine St., Philadelphia, PA",
+   "phone": "215-686-3180",
+   "email": "police.co_18@phila.gov",
+   "url": "https://www.phillypolice.com/districts/18th-district/"
+  },
+  "19": {
+   "name": "19th District",
+   "division": "Southwest",
+   "captain": "Capt. Marc Metellus",
+   "address": "61st St. & Thompson St., Philadelphia, PA",
+   "phone": "215-686-3190",
+   "email": "police.co_19@phila.gov",
+   "url": "https://www.phillypolice.com/districts/19th-district/"
+  },
+  "22": {
+   "name": "22nd District",
+   "division": "Central",
+   "captain": "Capt. Brian Sprowal",
+   "address": "17th St. & Montgomery Ave., Philadelphia, PA",
+   "phone": "215-686-3220",
+   "email": "police.co_22@phila.gov",
+   "url": "https://www.phillypolice.com/districts/22nd-district/"
+  },
+  "24": {
+   "name": "24th District",
+   "division": "East",
+   "captain": "Capt. Christopher Bullick",
+   "address": "3901 Whittaker Ave., Philadelphia, PA",
+   "phone": "215-686-3240",
+   "email": "police.co_24@phila.gov",
+   "url": "https://www.phillypolice.com/districts/24th-district/"
+  },
+  "25": {
+   "name": "25th District",
+   "division": "East",
+   "captain": "Capt. Stephen Bennis Jr.",
+   "address": "3901 Whittaker Ave., Philadelphia, PA",
+   "phone": "215-686-3250",
+   "email": "police.co_25@phila.gov",
+   "url": "https://www.phillypolice.com/districts/25th-district/"
+  },
+  "26": {
+   "name": "26th District",
+   "division": "East",
+   "captain": "Capt. Victoria Casale",
+   "address": "E. Girard Ave. & Montgomery Ave., Philadelphia, PA",
+   "phone": "215-686-3260",
+   "email": "police.co_26@phila.gov",
+   "url": "https://www.phillypolice.com/districts/26th-district/"
+  },
+  "35": {
+   "name": "35th District",
+   "division": "Northwest",
+   "captain": "Capt. Walter Burks",
+   "address": "N. Broad St. & Champlost St., Philadelphia, PA",
+   "phone": "215-686-3350",
+   "email": "police.co_35@phila.gov",
+   "url": "https://www.phillypolice.com/districts/35th-district/"
+  },
+  "39": {
+   "name": "39th District",
+   "division": "Northwest",
+   "captain": "Capt. Dana Bradley",
+   "address": "22nd St. & Hunting Park Ave., Philadelphia, PA",
+   "phone": "215-686-3390",
+   "email": "police.co_39@phila.gov",
+   "url": "https://www.phillypolice.com/districts/39th-district/"
+  },
+  "77": {
+   "name": "77th District",
+   "division": "Southwest",
+   "captain": "Capt. Samantha Brown",
+   "address": "8800 Essington Ave. (Airport), Philadelphia, PA",
+   "phone": "215-937-6918",
+   "email": "police.co_77@phila.gov",
+   "url": "https://www.phillypolice.com/districts/77th-district/"
+  }
+ },
+ "divisions": {
+  "South": {
+   "name": "South Division",
+   "districts": [
+    "01",
+    "03",
+    "17"
+   ],
+   "url": "https://www.phillypolice.com/district/districts-list/"
+  },
+  "Northeast": {
+   "name": "Northeast Division",
+   "districts": [
+    "02",
+    "07",
+    "08",
+    "15"
+   ],
+   "url": "https://www.phillypolice.com/district/districts-list/"
+  },
+  "Northwest": {
+   "name": "Northwest Division",
+   "districts": [
+    "05",
+    "14",
+    "35",
+    "39"
+   ],
+   "url": "https://www.phillypolice.com/district/districts-list/"
+  },
+  "Central": {
+   "name": "Central Division",
+   "districts": [
+    "09",
+    "22"
+   ],
+   "url": "https://www.phillypolice.com/district/districts-list/"
+  },
+  "Southwest": {
+   "name": "Southwest Division",
+   "districts": [
+    "12",
+    "16",
+    "18",
+    "19",
+    "77"
+   ],
+   "url": "https://www.phillypolice.com/district/districts-list/"
+  },
+  "East": {
+   "name": "East Division",
+   "districts": [
+    "24",
+    "25",
+    "26"
+   ],
+   "url": "https://www.phillypolice.com/district/districts-list/"
+  }
+ }
+}

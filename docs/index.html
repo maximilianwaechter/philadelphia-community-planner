@@ -31,7 +31,8 @@
     §17 Color picker
     §18 Rendering ............ tabs, layer list, plan list, demographics
     §19 Compare .............. any plan polygon or boundary against any other
-    §20 Wiring and start-up
+    §20 Crime ................ PPD incidents, shootings and stops: map, charts, tables, police contacts
+    §21 Wiring and start-up
 -->
 <html lang="en">
 <head>
@@ -261,6 +262,42 @@
   .picker .swatches button { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0,0,0,.2); cursor: pointer; padding: 0; }
   .picker .actions { display: flex; justify-content: space-between; margin-top: 12px; }
 
+  /* crime tab (§20) */
+  .crime-controls { padding: 6px 20px 4px; display: grid; gap: 8px; }
+  .crime-controls > label:not(.inline) { display: grid; gap: 3px; font-size: 12.5px; font-weight: 600; color: var(--ink-2); min-width: 0; }
+  .crime-controls select { padding: 5px 6px; border: 1px solid var(--rule); border-radius: 5px; background: #fff; font-weight: 400; color: var(--ink); width: 100%; min-width: 0; }
+  .crime-controls .crime-period select { width: auto; padding: 3px 5px; }
+  .crime-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 8px; }
+  .crime-grid label { display: grid; gap: 3px; font-size: 12px; color: var(--ink-2); min-width: 0; }
+  #panel-crime { overflow-x: hidden; }
+  .crime-period { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 13px; }
+  .crime-period .badge { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #fff; font-size: 12px; font-weight: 700; }
+  .crime-period .pmeta { font-size: 12px; color: var(--ink-2); margin-left: auto; }
+  .crime-chart { padding: 6px 20px 0; }
+  .crime-chart h3 { margin: 14px 0 4px; font-size: 13.5px; }
+  .crime-tt { margin: 20px 0 0; padding: 0 20px; font-size: 13.5px; }
+  .cbox { position: relative; height: 210px; }
+  .cbox.tall { height: 430px; }
+  table.crime-table tr[data-cat], table.crime-table tr[data-scope] { cursor: pointer; }
+  table.crime-table tr:hover td { background: #F7F7FA; }
+  table.crime-table tr.on td { background: #FBF4E6; }
+  table.crime-table tr.total td { font-weight: 700; border-bottom: 1.5px solid var(--ink); }
+  table.crime-table tr.subtotal td { font-weight: 700; padding-top: 10px; }
+  table.crime-table tr.sub td:first-child { padding-left: 14px; color: var(--ink-2); font-size: 12.5px; }
+  table.cmp td.diff.up { color: #B2182B; }
+  table.cmp td.diff.down { color: #2166AC; }
+  table.crime-table .covid { background: rgba(201, 138, 27, .12); }
+  .captain { font-size: 11.5px; color: var(--ink-2); font-weight: 400; }
+  .tagc { display: inline-block; padding: 0 5px; border-radius: 3px; font-weight: 600; }
+  .tagc.covid { background: rgba(201, 138, 27, .2); color: #7A5410; }
+  .tagc.a { background: rgba(107, 44, 145, .15); color: #6B2C91; }
+  .tagc.b { background: rgba(31, 111, 120, .17); color: #1F6F78; }
+  .crime-limits { margin: 20px 20px 0; padding: 10px 12px; border: 1px solid var(--rule); border-left: 3px solid var(--amber); border-radius: 6px; background: #FFFBF3; font-size: 12.5px; }
+  .crime-limits summary { font-weight: 700; cursor: pointer; font-size: 13px; }
+  .crime-limits ul { margin: 8px 0 0; padding-left: 18px; }
+  .crime-limits li { margin: 4px 0; }
+  .crime-limits a { color: var(--focus); }
+
   #toasts { position: fixed; right: 60px; top: 12px; z-index: 2000; display: grid; gap: 8px; justify-items: end; pointer-events: none; }
   .toast { pointer-events: auto; background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 6px; max-width: 380px; font-size: 14px; box-shadow: 0 4px 14px rgba(28, 36, 51, .25); }
   .toast.error { background: #8A1C1C; }
@@ -293,6 +330,7 @@
       <button class="tab" role="tab" id="tab-demographics" aria-controls="panel-demographics" aria-selected="false">Demographics</button>
       <button class="tab" role="tab" id="tab-plan" aria-controls="panel-plan" aria-selected="false">Plan<span class="count" id="plan-count">0</span></button>
       <button class="tab" role="tab" id="tab-compare" aria-controls="panel-compare" aria-selected="false">Compare</button>
+      <button class="tab" role="tab" id="tab-crime" aria-controls="panel-crime" aria-selected="false">Crime</button>
     </nav>
     <div class="panels">
       <section class="tabpanel" id="panel-data" role="tabpanel" aria-labelledby="tab-data">
@@ -349,6 +387,10 @@
       <section class="tabpanel" id="panel-compare" role="tabpanel" aria-labelledby="tab-compare" hidden>
         <div id="compare"></div>
       </section>
+
+      <section class="tabpanel" id="panel-crime" role="tabpanel" aria-labelledby="tab-crime" hidden>
+        <div id="crime"></div>
+      </section>
     </div>
   </aside>
   <main id="map" aria-label="Map"></main>
@@ -365,6 +407,7 @@
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script>
 (() => {
 'use strict';
@@ -517,9 +560,18 @@ const SLOTS = [
   { key: 'council', title: 'Council Districts 2024', kind: 'area', url: 'data/Council_Districts_2024.geojson', visible: true, analyzeOnClick: true,
     compare: 'Boundaries',
     style: { color: C.council, fillOpacity: 0.035, lineOpacity: 0.9, weight: 1.4 }, help: 'Click a district to calculate its demographics.' },
+  { key: 'policeDivisions', title: 'Police Divisions', kind: 'area', url: 'data/police_divisions.geojson', optional: true,
+    visible: false, analyzeOnClick: true, compare: 'Boundaries', labelField: 'division', labelFmt: v => `${v} Division`, zoomLabels: 11,
+    infoCard: f => policeContactHtml('division', (f.properties || {}).division),
+    style: { color: '#1B2A55', fillOpacity: 0, lineOpacity: 0.9, weight: 3.2 }, help: 'The six PPD patrol divisions (built from districts by scripts/06). Click one for its districts and commanding officers.' },
   { key: 'policeDistricts', title: 'Police Districts', kind: 'area', url: 'data/police_districts.geojson', live: 'Boundaries_District', optional: true,
     visible: true, analyzeOnClick: true, compare: 'Boundaries', labelField: 'dist_numc', labelFmt: v => `${ordinal(v)} District`, zoomLabels: 12,
-    style: { color: C.police, fillOpacity: 0, lineOpacity: 0.85, weight: 1.8, dashArray: '6 4' }, help: 'Philadelphia Police Department district boundaries.' },
+    infoCard: f => policeContactHtml('dist', (f.properties || {}).dist_numc),
+    style: { color: C.police, fillOpacity: 0, lineOpacity: 0.85, weight: 1.8, dashArray: '6 4' }, help: 'Philadelphia Police Department district boundaries. Click one for its captain, address and phone.' },
+  { key: 'psa', title: 'Police Service Areas (PSAs)', kind: 'area', url: 'data/police_psa.geojson', live: 'Boundaries_PSA', optional: true,
+    visible: false, analyzeOnClick: true, compare: 'Boundaries', labelField: 'psa', labelFmt: psaLabel, zoomLabels: 14,
+    infoCard: f => policeContactHtml('psa', psaKeyOf(f)),
+    style: { color: C.police, fillOpacity: 0, lineOpacity: 0.7, weight: 1, dashArray: '2 4' }, help: 'PSAs inside each police district. Click one for its district contacts.' },
   { key: 'wards', title: 'Political Wards', kind: 'area', url: 'data/political_wards.geojson', live: 'Political_Wards', optional: true,
     visible: false, analyzeOnClick: true, compare: 'Boundaries', labelField: 'ward_num', labelFmt: v => `Ward ${Number(v)}`, zoomLabels: 13,
     style: { color: C.ward, fillOpacity: 0, lineOpacity: 0.85, weight: 1.6 }, help: 'The 66 voting wards.' },
@@ -867,7 +919,7 @@ L.control.scale({ imperial: true, metric: false }).addTo(map);
 
 // Panes control drawing order (higher zIndex = on top). Leaflet's defaults are
 // tilePane 200, overlayPane 400, markerPane 600, popupPane 700.
-[['refPane', 350], ['heatPane', 356], ['policePane', 380], ['streetPane', 385], ['comparePane', 390], ['highlightPane', 395], ['labelsPane', 440], ['pointsPane', 450], ['poiPane', 455]]
+[['refPane', 350], ['heatPane', 356], ['policePane', 380], ['streetPane', 385], ['crimeSegPane', 388], ['comparePane', 390], ['highlightPane', 395], ['labelsPane', 440], ['pointsPane', 450], ['poiPane', 455]]
   .forEach(([name, z]) => {
     const p = map.createPane(name);
     p.style.zIndex = z;
@@ -1095,7 +1147,7 @@ function guessLabelField(fc, key) {
   const prefs = {
     city: [/^name$/i, /city/i], council: [/district/i, /^name$/i, /dist/i], police: [/^name$/i, /boundary/i, /district/i],
     tuBuildings: [/^name$/i, /^bldg/i, /^building/i, /^address/i], tuStations: [/^location$/i, /^name$/i, /station/i],
-    policeStations: [/^dist_num$/i, /^location$/i], schools: [/school_?name/i, /^name$/i, /^facil/i, /school/i],
+    policeStations: [/^dist_num$/i, /^location$/i], psa: [/^psa$/i, /^psa_num$/i, /psa/i], schools: [/school_?name/i, /^name$/i, /^facil/i, /school/i],
   }[key] || [/^name$/i];
   for (const re of prefs) { const hit = props.find(p => re.test(p)); if (hit) return hit; }
   return props.find(p => fc.features.some(f => typeof (f.properties || {})[p] === 'string')) || '';
@@ -1138,6 +1190,7 @@ function reorderRefLayers() {
     const e = state.layers[s.key];
     if (s.kind === 'area' && e && e.visible && e.leaflet && map.hasLayer(e.leaflet)) e.leaflet.bringToFront();
   }
+  crime.layer.eachLayer(l => { if (l.bringToFront) l.bringToFront(); });   // crime choropleth sits above the outlines
   if (vacancy.geo && map.hasLayer(vacancy.group)) vacancy.geo.bringToFront();
 }
 
@@ -1159,6 +1212,8 @@ function tipFor(slot, f) {
 function stationPopup(f) {
   const p = f.properties || {};
   const phone = p.phone__ ? String(p.phone__).replace(/^(\d{3}-\d{4})$/, '215-$1') : '';
+  const contact = policeContactHtml('dist', p.dist_num);
+  if (contact) return `<div class="info-card" style="margin:0;border:0;padding:0;background:none">${contact}</div>`;
   return `<strong>${esc(ordinal(p.dist_num))} Police District</strong><br>${esc(p.location || '')}, Philadelphia, PA${phone ? `<br>Phone: <a href="tel:${esc(phone)}">${esc(phone)}</a>` : ''}`;
 }
 
@@ -1231,7 +1286,8 @@ function setSlot(key, fc, fileName) {
   if (old && old.leaflet) map.removeLayer(old.leaflet);
   if (old && old.labels) map.removeLayer(old.labels);
   if (slot.filter) fc = { ...fc, features: fc.features.filter(slot.filter) };
-  const entry = { fc, fileName, labelField: slot.labelField || guessLabelField(fc, key), visible: slot.visible !== false };
+  const hasField = slot.labelField && fc.features.some(f => (f.properties || {})[slot.labelField] != null);
+  const entry = { fc, fileName, labelField: hasField ? slot.labelField : guessLabelField(fc, key), visible: slot.visible !== false };
   state.layers[key] = entry;
   entry.leaflet = buildLeaflet(slot, entry);
   entry.labelPts = labelPoints(slot, fc, entry.labelField);
@@ -1585,7 +1641,7 @@ function loadCityStreets() {
     const feats = [];
     for (let offset = 0, i = 0; i < 60; i++) {
       const params = new URLSearchParams({
-        where: '1=1', outFields: 'objectid', outSR: '4326', f: 'geojson', geometryPrecision: '6',
+        where: '1=1', outFields: 'objectid,seg_id', outSR: '4326', f: 'geojson', geometryPrecision: '6',
         orderByFields: 'objectid', resultOffset: String(offset), resultRecordCount: '2000',
       });
       const j = await fetchJSON(`${STREET_URL}?${params}`);
@@ -2566,7 +2622,7 @@ function openSlotStyle(slot, anchor) {
  *     Tabs, the layer list, the planning-polygon list and the
  *     Demographics tab. Everything is re-rendered from state.
  * ================================================================== */
-const TABS = ['data', 'demographics', 'plan', 'compare'];
+const TABS = ['data', 'demographics', 'plan', 'compare', 'crime'];
 
 /** Switch the side panel to a tab ('data', 'demographics', 'plan' or 'compare'). */
 function showTab(name) {
@@ -2577,6 +2633,7 @@ function showTab(name) {
   if (isPanelCollapsed()) setPanelCollapsed(false);   // a map click that opens a tab should show it
   if (name === 'demographics') renderDemographics();
   if (name === 'compare') renderCompare(); else clearCompareHighlight();
+  if (name === 'crime') renderCrime(); else destroyCrimeCharts();
   drawSelectionHighlight();   // hidden on the Compare tab, shown everywhere else
 }
 $$('.tab').forEach(t => t.addEventListener('click', () => showTab(t.id.replace('tab-', ''))));
@@ -2806,10 +2863,12 @@ function renderDemographics() {
   const clearBtn = sel.type !== 'whole' ? '<button class="btn quiet small" id="btn-clear-sel" title="Back to the whole plan (Esc)">Clear selection</button>' : '';
   box.innerHTML = `<div class="details-head"><h2>${esc(cur.name)}</h2>${clearBtn}</div><p class="summary">${summary}</p>${info}
     <p class="summary" id="vacancy-demo" ${vacancy.key && vacancy.text ? '' : 'hidden'}>${esc(vacancy.text)}</p>${statsBlock(cur.r)}
+    <div id="crime-demo" class="crime-demo"></div>
     <p class="note">Household population is modeled building by building from ACS tract totals, OPA unit counts, vacancy, and owner and renter household sizes. Inside a polygon, person counts are split by modeled population, household counts by occupied units, and owner or renter counts by owner or renter units, so every tract still adds up to its ACS total. Percentages are recalculated from those counts; median income, rent and home value are household-weighted averages of tract medians. Outreach members are counted from ~250 m grid cells (a cell on the polygon edge counts by the share inside), so treat small-area counts as approximate; members recorded with only a ZIP code are not included.</p>
     <div class="row" style="margin-top:12px"><button class="btn quiet small" id="btn-csv">Download plan demographics (CSV)</button></div>`;
   $('#btn-csv').addEventListener('click', exportCSV);
   $('#btn-clear-sel')?.addEventListener('click', clearSelection);
+  fillCrimeDemo(cur.r);
 }
 $('#demo-scope').addEventListener('change', e => {
   const v = e.target.value;
@@ -2968,7 +3027,7 @@ function renderCompare() {
   if (a && b) {
     const ready = a.stats && b.stats && a.stats.demo && b.stats.demo;
     html += ready
-      ? `<div class="table-wrap"><table class="cmp"><thead><tr><th></th><th>A · ${esc(a.name)}</th><th>B · ${esc(b.name)}</th><th>A − B</th></tr></thead><tbody>${compareRows(a.stats, b.stats)}</tbody></table></div>`
+      ? `<div class="table-wrap"><table class="cmp"><thead><tr><th></th><th>A · ${esc(a.name)}</th><th>B · ${esc(b.name)}</th><th>A − B</th></tr></thead><tbody>${compareRows(a.stats, b.stats)}</tbody></table></div><div id="crime-cmp"></div>`
       : '<p class="empty">Demographic data are not ready yet (see the Layers tab for the data status).</p>';
   } else {
     html += '<p class="empty">Pick something for both A and B. Draw or import a planning polygon, or turn on a boundary layer, to have more choices.</p>';
@@ -2986,6 +3045,7 @@ function renderCompare() {
   }
   box.innerHTML = html;
   drawCompareHighlight(a, b);
+  fillCrimeCompare();
 
   box.querySelectorAll('select[data-side]').forEach(sel => sel.addEventListener('change', e => {
     const side = e.target.dataset.side, key = side === 'A' ? 'compareA' : 'compareB';
@@ -3015,6 +3075,7 @@ function scheduleUpdate() {
     restyleLinkedPoints();   // schools follow their catchment polygon's color
     renderPlanList(); renderDemographics();
     if (!$('#panel-compare').hidden) renderCompare();
+    if (!$('#panel-crime').hidden && crime.scope === 'sel') renderCrime();
     autosave();
   }, 60);
 }
@@ -3022,7 +3083,927 @@ let cmpTimer = null;
 function renderCompareSoon() { clearTimeout(cmpTimer); cmpTimer = setTimeout(() => { if (!$('#panel-compare').hidden) renderCompare(); }, 200); }
 
 /* ================================================================== *
- * §20 Wiring and start-up
+ * §20 Crime, shootings and police stops
+ *     Philadelphia Police Department open data, prepared by
+ *     scripts/06_crime_data.py into docs/data/crime/:
+ *       meta.json      months, offense list, coverage, QA counts
+ *       areas.json     monthly counts per offense for the city, divisions, districts, PSAs
+ *       segments.json  street segments (seg_id, midpoint, length in feet)
+ *       seg_YYYY.json  monthly counts per offense per street segment (loaded on demand)
+ *
+ *     Everything is compared as an AVERAGE PER MONTH over a period, so a
+ *     one-month period, a year and a multi-year range can be compared
+ *     fairly. Change is always B − A in that unit, never a percentage.
+ *
+ *     The map shows street segments up close and police districts / PSAs
+ *     zoomed out ("Auto"), or one geography the user picks.
+ * ================================================================== */
+const CRIME_DIR = 'data/crime/';
+const CONTACTS_URL = 'data/police_contacts.json';
+const VIOLENT_UCR = [100, 200, 300, 400, 800];
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Shaded on every chart with a time axis.
+const COVID_PERIOD = { start: '2020-03', end: '2021-06', label: 'COVID-19' };
+// Laws and policy changes drawn as dashed lines on the charts.
+//   month: 'YYYY-MM'   label: short text   applies: 'all', 'crime', 'shooting' or 'stop'
+const POLICY_EVENTS = [];
+const CRIME_SEG_MIN_ZOOM = 15;     // Auto: street segments at this zoom and closer
+const CRIME_PSA_MIN_ZOOM = 13;     // Auto: PSAs between this and the segment zoom, districts below
+const CRIME_SEQ = ['#FDE0D2', '#FCA98A', '#F96A4B', '#D92D27', '#9E0F16'];
+const CRIME_DIV = ['#2166AC', '#6BA8D0', '#CFE3F0', '#F9D6C2', '#EB8461', '#B2182B'];
+const CRIME_ZERO = '#ECEFF3';
+const CRIME_GEO = { dist: 'policeDistricts', psa: 'psa', division: 'policeDivisions' };
+
+const crime = {
+  status: 'idle', error: '',              // idle | loading | ready | missing | error
+  meta: null, months: [], offs: [], areaRaw: null, areaMats: new Map(),
+  segs: null, segById: null, years: new Map(), allYears: null,
+  on: false, cat: 'crime', view: 'diff', geo: 'auto', perLength: true,
+  A: null, B: null, scope: 'city',
+  layer: L.layerGroup(), segRenderer: null, drawSeq: 0, segFeatures: null,
+  charts: [], maskCache: new Map(), segValCache: new Map(), insideCache: new Map(), polyMatCache: new Map(),
+  loadingHistory: false,
+};
+const police = { contacts: null };
+
+/* ---------- police contacts (popups for divisions, districts, PSAs, stations) ---------- */
+const distKey = v => String(v ?? '').replace(/\.0$/, '').padStart(2, '0');
+const psaKeyOf = f => { const p = f.properties || {}; return String(p.psa ?? p.psa_num ?? p.PSA_NUM ?? p.PSA ?? '').trim(); };
+function psaLabel(v) {
+  const s = String(v ?? '');
+  return /^\d{3}$/.test(s) ? `PSA ${Number(s.slice(0, 2))}-${s.slice(2)}` : `PSA ${s}`;
+}
+const psaDistrict = v => { const s = String(v ?? ''); return /^\d{3}$/.test(s) ? s.slice(0, 2) : ''; };
+
+async function loadPoliceContacts() {
+  try { police.contacts = await fetchJSON(CONTACTS_URL); } catch { police.contacts = null; }
+}
+
+/** Contact lines for one district record. Returns HTML. */
+function districtLines(d, { short = false } = {}) {
+  if (!d) return '';
+  const phone = d.phone ? `<a href="tel:${esc(d.phone.replace(/[^\d+]/g, ''))}">${esc(d.phone)}</a>` : '';
+  if (short) return `<div><strong>${esc(d.name)}</strong> · ${esc(d.captain || '')}${phone ? ` · ${phone}` : ''}</div>`;
+  return [
+    `<div><strong>${esc(d.name)}</strong> · ${esc(d.division)} Division</div>`,
+    d.captain && `<div>${esc(d.captain)}, commanding officer</div>`,
+    d.address && `<div>${esc(d.address)}</div>`,
+    phone && `<div>Phone: ${phone}</div>`,
+    d.email && `<div>Email: <a href="mailto:${esc(d.email)}">${esc(d.email)}</a></div>`,
+    d.url && `<div><a href="${esc(d.url)}" target="_blank" rel="noopener">District page (current captain, PSA meetings)</a></div>`,
+  ].filter(Boolean).join('');
+}
+
+/**
+ * Point-of-contact card for a police division, district or PSA.
+ * @param {'division'|'dist'|'psa'} kind
+ */
+function policeContactHtml(kind, key) {
+  const c = police.contacts;
+  if (!c) return '';
+  const asOf = `<div style="margin-top:6px;color:#505B6E;font-size:12px">Contacts from phillypolice.com as of ${esc(c.as_of)}. Non-emergency: ${esc(c.non_emergency || '311')}.</div>`;
+  if (kind === 'dist') return districtLines(c.districts[distKey(key)]) + asOf;
+  if (kind === 'psa') {
+    const d = c.districts[psaDistrict(key)];
+    return `<div><strong>${esc(psaLabel(key))}</strong></div>${d ? districtLines(d) : ''}<div style="margin-top:4px;color:#505B6E;font-size:12px">PPD does not publish PSA lieutenant contacts; reach the PSA through its district.</div>${asOf}`;
+  }
+  if (kind === 'division') {
+    const v = c.divisions[key];
+    if (!v) return '';
+    return `<div><strong>${esc(v.name)}</strong></div>${v.districts.map(n => districtLines(c.districts[n], { short: true })).join('')}
+      <div><a href="${esc(v.url)}" target="_blank" rel="noopener">PPD districts list</a></div>${asOf}`;
+  }
+  return '';
+}
+
+/* ---------- loading ---------- */
+async function loadCrimeMeta() {
+  crime.status = 'loading';
+  try {
+    const meta = await fetchJSON(CRIME_DIR + 'meta.json');
+    crime.meta = meta; crime.months = meta.months; crime.offs = meta.offenses;
+    crime.areaRaw = await fetchJSON(CRIME_DIR + 'areas.json');
+    const last = crime.months[crime.months.length - 1];
+    const lastFull = last.endsWith('-12') ? Number(last.slice(0, 4)) : Number(last.slice(0, 4)) - 1;
+    crime.A = yearPeriod(lastFull - 1); crime.B = yearPeriod(lastFull);
+    crime.status = 'ready';
+  } catch (err) {
+    crime.status = /404/.test(String(err && err.message)) ? 'missing' : 'error';
+    crime.error = err.message || String(err);
+  }
+  renderCrimeSoon();
+}
+async function loadCrimeSegments() {
+  if (crime.segs) return crime.segs;
+  if (!crime.segsLoading) {
+    crime.segsLoading = fetchJSON(CRIME_DIR + 'segments.json').then(s => {
+      crime.segs = s; crime.segById = new Map(s.seg_id.map((id, i) => [id, i]));
+      return s;
+    });
+    crime.segsLoading.catch(() => { crime.segsLoading = null; });
+  }
+  return crime.segsLoading;
+}
+function loadCrimeYear(y) {
+  if (!crime.years.has(y)) {
+    const p = fetchJSON(`${CRIME_DIR}seg_${y}.json`).then(j => Int32Array.from(j.rows)).catch(() => new Int32Array(0));
+    crime.years.set(y, p);
+  }
+  return crime.years.get(y);
+}
+
+/* ---------- periods (always averaged per month) ---------- */
+const yearPeriod = y => ({ type: 'year', from: `${y}-01`, to: `${y}-12` });
+const ymLabel = ym => `${MONTH_ABBR[Number(ym.slice(5)) - 1]} ${ym.slice(0, 4)}`;
+/** Month indexes [i0, i1] of a period inside the data and the coverage of a category, or null. */
+function periodRange(p, kind) {
+  const m = crime.months;
+  if (!p || !m.length) return null;
+  const cov = kind && crime.meta.coverage[kind];
+  const from = cov && cov.first > p.from ? cov.first : p.from, to = cov && cov.last < p.to ? cov.last : p.to;
+  let i0 = m.findIndex(x => x >= from), i1 = -1;
+  for (let i = m.length - 1; i >= 0; i--) if (m[i] <= to) { i1 = i; break; }
+  if (i0 < 0 || i1 < i0) return null;
+  return { i0, i1, n: i1 - i0 + 1 };
+}
+function periodLabel(p) {
+  if (!p) return '–';
+  if (p.type === 'year') {
+    const r = periodRange(p), y = p.from.slice(0, 4);
+    return r && r.n < 12 ? `${y} (${MONTH_ABBR[Number(crime.months[r.i0].slice(5)) - 1]}–${MONTH_ABBR[Number(crime.months[r.i1].slice(5)) - 1]})` : y;
+  }
+  if (p.type === 'month') return ymLabel(p.from);
+  return `${ymLabel(p.from)} – ${ymLabel(p.to)}`;
+}
+
+/* ---------- categories ---------- */
+const OFF_KIND_LABEL = { crime: 'incidents', shooting: 'shooting victims', stop: 'stops' };
+/** 1 for every offense the category includes. Categories: crime, violent, nonviolent, shooting, stop, ucr:<code>, off:<index>. */
+function catMask(cat) {
+  if (!crime.maskCache.has(cat)) {
+    const [k, v] = cat.split(':');
+    crime.maskCache.set(cat, Uint8Array.from(crime.offs.map((o, i) =>
+      (k === 'crime' ? o.kind === 'crime' : k === 'violent' ? o.cls === 'violent' : k === 'nonviolent' ? o.cls === 'nonviolent'
+        : k === 'shooting' ? o.kind === 'shooting' : k === 'stop' ? o.kind === 'stop'
+        : k === 'ucr' ? o.kind === 'crime' && o.ucr === Number(v) : k === 'off' ? i === Number(v) : false) ? 1 : 0)));
+  }
+  return crime.maskCache.get(cat);
+}
+function catKind(cat) {
+  const [k, v] = cat.split(':');
+  if (k === 'shooting' || k === 'stop') return k;
+  if (k === 'off') return (crime.offs[Number(v)] || {}).kind || 'crime';
+  return 'crime';
+}
+const ucrName = code => {
+  const names = crime.offs.filter(o => o.kind === 'crime' && o.ucr === code).map(o => o.label);
+  if (!names.length) return `UCR ${code}`;
+  if (names.length === 1) return names[0];
+  const words = names[0].split(/\s+-\s+|\s+/);   // "Robbery Firearm" + "Robbery No Firearm" -> "Robbery"
+  let common = '';
+  for (let n = words.length; n > 0; n--) { const pre = words.slice(0, n).join(' '); if (names.every(x => x.startsWith(pre))) { common = pre; break; } }
+  return common || names[0];
+};
+function catLabel(cat) {
+  const [k, v] = cat.split(':');
+  return { crime: 'All reported crime', violent: 'Violent crime', nonviolent: 'Nonviolent crime', shooting: 'Shooting victims', stop: 'Police stops' }[k]
+    || (k === 'ucr' ? `${v} · ${ucrName(Number(v))}` : (crime.offs[Number(v)] || {}).label || cat);
+}
+const ucrCodes = () => [...new Set(crime.offs.filter(o => o.kind === 'crime').map(o => o.ucr))].sort((a, b) => a - b);
+
+/* ---------- area numbers (city, division, district, PSA) ---------- */
+/** Dense counts for one area: Float32Array(offenses × months). key: 'city', 'division:East', 'dist:24', 'psa:241'. */
+function areaMatrix(key) {
+  if (crime.areaMats.has(key)) return crime.areaMats.get(key);
+  const [k, v] = key.split(':');
+  const flat = k === 'city' ? crime.areaRaw.city : (crime.areaRaw[k] || {})[v];
+  const nm = crime.months.length, mat = new Float32Array(crime.offs.length * nm);
+  if (flat) for (let i = 0; i < flat.length; i += 3) mat[flat[i + 1] * nm + flat[i]] += flat[i + 2];
+  crime.areaMats.set(key, mat);
+  return mat;
+}
+function sumMatrix(mat, cat, r) {
+  if (!r || !mat) return null;
+  const mask = catMask(cat), nm = crime.months.length;
+  let s = 0;
+  for (let o = 0; o < mask.length; o++) if (mask[o]) for (let i = r.i0; i <= r.i1; i++) s += mat[o * nm + i];
+  return s;
+}
+/** Average per month of a category in a period, or null when the period has no data for it. */
+const avgMatrix = (mat, cat, p) => { const r = periodRange(p, catKind(cat)); const s = sumMatrix(mat, cat, r); return s === null ? null : s / r.n; };
+function seriesMatrix(mat, cat) {
+  const mask = catMask(cat), nm = crime.months.length, out = new Float64Array(nm);
+  for (let o = 0; o < mask.length; o++) if (mask[o]) for (let i = 0; i < nm; i++) out[i] += mat[o * nm + i];
+  return out;
+}
+
+/* ---------- street segments and drawn polygons ---------- */
+/** Total count per street segment for a category over a period (Float64Array by segment index). */
+async function segTotals(p, cat) {
+  const r = periodRange(p, catKind(cat));
+  if (!r) return null;
+  const key = `${r.i0}-${r.i1}|${cat}`;
+  if (crime.segValCache.has(key)) return crime.segValCache.get(key);
+  await loadCrimeSegments();
+  const y0 = Number(crime.months[r.i0].slice(0, 4)), y1 = Number(crime.months[r.i1].slice(0, 4));
+  const years = await Promise.all(Array.from({ length: y1 - y0 + 1 }, (_, i) => loadCrimeYear(y0 + i)));
+  const mask = catMask(cat), out = new Float64Array(crime.segs.seg_id.length);
+  for (const rows of years) for (let i = 0; i < rows.length; i += 4) {
+    const m = rows[i + 1];
+    if (m >= r.i0 && m <= r.i1 && mask[rows[i + 2]]) out[rows[i]] += rows[i + 3];
+  }
+  const res = { vals: out, n: r.n };
+  crime.segValCache.set(key, res);
+  if (crime.segValCache.size > 40) crime.segValCache.delete(crime.segValCache.keys().next().value);
+  return res;
+}
+/** Indexes of street segments whose midpoint falls inside a polygon. */
+async function segsInside(key, geometry) {
+  if (crime.insideCache.has(key)) return crime.insideCache.get(key);
+  await loadCrimeSegments();
+  const aoi = cleanAoi(geometry), bb = turf.bbox(aoi), s = crime.segs, out = [];
+  let ft = 0;
+  for (let i = 0; i < s.lon.length; i++) {
+    const pt = [s.lon[i], s.lat[i]];
+    if (!inBbox(pt, bb)) continue;
+    let hit = false;
+    try { hit = turf.booleanPointInPolygon(pt, aoi); } catch { hit = false; }
+    if (hit) { out.push(i); ft += s.ft[i]; }
+  }
+  const res = { idx: Int32Array.from(out), miles: ft / 5280 };
+  crime.insideCache.set(key, res);
+  return res;
+}
+/** Average per month of a category inside a polygon over a period, or null. */
+async function polygonAvg(key, geometry, p, cat) {
+  const [inside, t] = await Promise.all([segsInside(key, geometry), segTotals(p, cat)]);
+  if (!t) return null;
+  let s = 0;
+  for (const i of inside.idx) s += t.vals[i];
+  return s / t.n;
+}
+/** Full monthly history (offenses × months) inside a polygon. Loads every year file. */
+async function polygonMatrix(key, geometry, onProgress) {
+  if (crime.polyMatCache.has(key)) return crime.polyMatCache.get(key);
+  const inside = await segsInside(key, geometry);
+  const flag = new Uint8Array(crime.segs.seg_id.length);
+  for (const i of inside.idx) flag[i] = 1;
+  const nm = crime.months.length, mat = new Float32Array(crime.offs.length * nm);
+  let done = 0;
+  for (const y of crime.meta.years) {
+    const rows = await loadCrimeYear(y);
+    for (let i = 0; i < rows.length; i += 4) if (flag[rows[i]]) mat[rows[i + 2] * nm + rows[i + 1]] += rows[i + 3];
+    onProgress && onProgress(++done, crime.meta.years.length);
+  }
+  crime.polyMatCache.set(key, mat);
+  return mat;
+}
+
+/* ---------- formatting ---------- */
+function fmtAvg(v) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '–';
+  const a = Math.abs(v);
+  if (a === 0) return '0';
+  return a >= 100 ? Math.round(v).toLocaleString('en-US') : a >= 10 ? v.toFixed(1) : a >= 1 ? v.toFixed(2) : String(Number(v.toPrecision(2)));
+}
+function fmtAvgDiff(d) {
+  if (d === null || d === undefined || !Number.isFinite(d)) return '–';
+  if (Math.abs(d) < 0.005) return 'same';
+  return (d > 0 ? '+' : '−') + fmtAvg(Math.abs(d));
+}
+const diffClass = d => (!Number.isFinite(d) || Math.abs(d) < 0.005 ? '' : d > 0 ? 'up' : 'down');
+
+/* ---------- the map layer ---------- */
+function resolveCrimeGeo() {
+  if (crime.geo !== 'auto') return crime.geo;
+  const z = map.getZoom();
+  return z >= CRIME_SEG_MIN_ZOOM ? 'seg' : z >= CRIME_PSA_MIN_ZOOM && state.layers.psa ? 'psa' : 'dist';
+}
+/** Class breaks for the values on screen. Sequential for one period, diverging around zero for differences. */
+function crimeBreaks(values, diverging) {
+  const v = values.filter(x => Number.isFinite(x) && Math.abs(x) > 1e-9).map(Math.abs).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const q = f => v[Math.min(v.length - 1, Math.floor(f * v.length))];
+  if (diverging) { const m = q(0.95) || v[v.length - 1]; return [m / 3, (2 * m) / 3]; }
+  const b = [q(0.2), q(0.4), q(0.6), q(0.8)];
+  return b.map((x, i) => (i && x <= b[i - 1] ? b[i - 1] * 1.0001 : x));
+}
+function crimeColor(v, br, diverging) {
+  if (!br || !Number.isFinite(v) || Math.abs(v) < 1e-9) return CRIME_ZERO;
+  if (diverging) {
+    const a = Math.abs(v), k = a >= br[1] ? 2 : a >= br[0] ? 1 : 0;
+    return v < 0 ? CRIME_DIV[2 - k] : CRIME_DIV[3 + k];
+  }
+  let k = 0;
+  while (k < br.length && v > br[k]) k++;
+  return CRIME_SEQ[k];
+}
+function crimeLegendHtml(br, diverging, unit) {
+  const head = `<strong>${esc(catLabel(crime.cat))}</strong><div style="color:#505B6E">${esc(diverging ? `Change, B − A (${periodLabel(crime.B)} vs ${periodLabel(crime.A)})` : `Period ${crime.view} · ${periodLabel(crime[crime.view])}`)}<br>${esc(unit)}</div>`;
+  if (!br) return `${head}<div style="margin-top:4px">No records in view.</div>`;
+  const row = (c, t) => `<div style="display:flex;gap:6px;align-items:center"><i style="width:14px;height:10px;border-radius:2px;background:${c};display:inline-block"></i>${t}</div>`;
+  let rows;
+  if (diverging) {
+    const [a, b] = br.map(fmtAvg);
+    rows = [row(CRIME_DIV[5], `up ${b}+`), row(CRIME_DIV[4], `up ${a}–${b}`), row(CRIME_DIV[3], `up under ${a}`), row(CRIME_ZERO, 'no change'),
+      row(CRIME_DIV[2], `down under ${a}`), row(CRIME_DIV[1], `down ${a}–${b}`), row(CRIME_DIV[0], `down ${b}+`)];
+  } else {
+    const e = [0, ...br];
+    rows = CRIME_SEQ.map((c, i) => row(c, i < br.length ? `${fmtAvg(e[i])}–${fmtAvg(e[i + 1])}` : `${fmtAvg(e[i])}+`)).reverse();
+  }
+  return `${head}<div style="margin-top:4px;display:grid;gap:1px">${rows.join('')}</div><div style="margin-top:4px;color:#505B6E">Reported to PPD</div>`;
+}
+const crimeLegend = L.control({ position: 'bottomright' });
+crimeLegend.onAdd = () => { const d = L.DomUtil.create('div', 'map-legend'); d.hidden = true; return d; };
+crimeLegend.addTo(map);
+
+/** Value shown on the map for one area matrix (or totals), following the view setting. */
+function viewValue(getAvg) {
+  if (crime.view === 'diff') { const a = getAvg(crime.A), b = getAvg(crime.B); return a === null || b === null ? null : b - a; }
+  return getAvg(crime[crime.view]);
+}
+
+/** Redraw the crime layer. Cheap enough to call on every map move in street-segment mode. */
+async function drawCrimeMap() {
+  const seq = ++crime.drawSeq, legendEl = crimeLegend.getContainer();
+  crime.layer.clearLayers();
+  if (!crime.on || crime.status !== 'ready') { legendEl.hidden = true; if (map.hasLayer(crime.layer)) map.removeLayer(crime.layer); return; }
+  if (!map.hasLayer(crime.layer)) map.addLayer(crime.layer);
+  const geo = resolveCrimeGeo(), diverging = crime.view === 'diff';
+  const unit = geo === 'seg' && crime.perLength ? `${OFF_KIND_LABEL[catKind(crime.cat)]} per month per 1,000 ft of street` : `average ${OFF_KIND_LABEL[catKind(crime.cat)]} per month`;
+  if (geo === 'seg') {
+    if (map.getZoom() < 13) {
+      legendEl.hidden = false;
+      legendEl.innerHTML = `<strong>${esc(catLabel(crime.cat))}</strong><div>Zoom in to see street segments.</div>`;
+      return;
+    }
+    let lines, ta, tb;
+    try {
+      [lines, ta, tb] = await Promise.all([crimeSegmentLines(), diverging || crime.view === 'A' ? segTotals(crime.A, crime.cat) : null, diverging || crime.view === 'B' ? segTotals(crime.B, crime.cat) : null]);
+    } catch (err) { legendEl.hidden = false; legendEl.textContent = `Couldn't load street segments: ${err.message}`; return; }
+    if (seq !== crime.drawSeq) return;
+    const bounds = map.getBounds().pad(0.15), items = [];
+    for (const [idx, layer] of lines) {
+      const a = ta ? ta.vals[idx] / ta.n : 0, b = tb ? tb.vals[idx] / tb.n : 0;
+      let v = diverging ? (ta && tb ? b - a : null) : crime.view === 'A' ? (ta ? a : null) : (tb ? b : null);
+      if (v === null || Math.abs(v) < 1e-9) continue;
+      if (!bounds.intersects(layer.getBounds())) continue;
+      const k = crime.perLength ? 1000 / Math.max(50, crime.segs.ft[idx]) : 1;
+      items.push({ idx, layer, v: v * k, a: a * k, b: b * k });
+    }
+    const br = crimeBreaks(items.map(x => x.v), diverging);
+    if (!crime.segRenderer) crime.segRenderer = L.canvas({ pane: 'crimeSegPane', padding: 0.2, tolerance: 4 });
+    const vmax = br ? (diverging ? br[1] * 1.5 : br[br.length - 1] * 1.25) : 1;
+    for (const it of items) {
+      const w = 2 + Math.min(1, Math.abs(it.v) / vmax) * 4;
+      L.geoJSON(it.layer.feature, {
+        renderer: crime.segRenderer, pmIgnore: true, snapIgnore: true,
+        style: { color: crimeColor(it.v, br, diverging), weight: w, opacity: 0.95, lineCap: 'round' },
+        onEachFeature: (f, l) => l.bindTooltip(() => segTip(it), { sticky: true, className: 'ref-tip' }),
+      }).addTo(crime.layer);
+    }
+    legendEl.hidden = false; legendEl.innerHTML = crimeLegendHtml(br, diverging, unit);
+    return;
+  }
+  // Police divisions, districts or PSAs
+  const slotKey = CRIME_GEO[geo], slot = SLOTS.find(s => s.key === slotKey), e = state.layers[slotKey];
+  if (!e || !e.fc) {
+    legendEl.hidden = false;
+    legendEl.innerHTML = `<strong>${esc(catLabel(crime.cat))}</strong><div>${esc(slot ? slot.title : geo)} boundaries are not loaded. Run scripts/06_crime_data.py.</div>`;
+    return;
+  }
+  const keyOf = f => (geo === 'dist' ? `dist:${distKey((f.properties || {}).dist_numc)}` : geo === 'psa' ? `psa:${psaKeyOf(f)}` : `division:${(f.properties || {}).division}`);
+  const items = e.fc.features.filter(f => isPoly(f.geometry)).map(f => {
+    const mat = areaMatrix(keyOf(f));
+    const a = avgMatrix(mat, crime.cat, crime.A), b = avgMatrix(mat, crime.cat, crime.B);
+    return { f, a, b, v: diverging ? (a === null || b === null ? null : b - a) : crime.view === 'A' ? a : b };
+  });
+  const br = crimeBreaks(items.map(x => x.v), diverging);
+  const geoLayer = L.geoJSON({ type: 'FeatureCollection', features: items.map(x => x.f) }, {
+    pane: 'refPane', renderer: refRenderer, pmIgnore: true, snapIgnore: true,
+    style: f => { const it = items.find(x => x.f === f); return { color: '#3A4255', weight: 1, opacity: 0.8, fillColor: crimeColor(it.v, br, diverging), fillOpacity: 0.62 }; },
+    onEachFeature: (f, l) => {
+      const it = items.find(x => x.f === f);
+      l.bindTooltip(() => areaTip(slot, f, it), { sticky: true, className: 'ref-tip' });
+      l.on('click', () => {
+        if (pmBusy()) return;
+        const key = keyOf(f);
+        state.selected = null;
+        state.analysisSelection = { type: 'reference', name: featureName(slot, f, e), geometry: f.geometry, info: slot.infoCard ? slot.infoCard(f) : '', color: '#F2B705' };
+        crime.scope = key;
+        if ($('#panel-crime').hidden) showTab('demographics'); else renderCrime();
+        scheduleUpdate();
+      });
+    },
+  });
+  geoLayer.addTo(crime.layer);
+  geoLayer.bringToFront();
+  legendEl.hidden = false; legendEl.innerHTML = crimeLegendHtml(br, diverging, unit);
+}
+function areaTip(slot, f, it) {
+  return `<strong>${esc(featureName(slot, f))}</strong><br>${esc(catLabel(crime.cat))}, average per month<br>
+    A · ${esc(periodLabel(crime.A))}: <strong>${fmtAvg(it.a)}</strong><br>B · ${esc(periodLabel(crime.B))}: <strong>${fmtAvg(it.b)}</strong><br>
+    Change (B − A): <strong>${fmtAvgDiff(it.a === null || it.b === null ? null : it.b - it.a)}</strong><br><span style="color:#505B6E">Click for contacts and demographics</span>`;
+}
+function segTip(it) {
+  const u = crime.perLength ? ' per 1,000 ft' : '';
+  return `<strong>Street segment ${esc(crime.segs.seg_id[it.idx])}</strong> (${Math.round(crime.segs.ft[it.idx]).toLocaleString()} ft)<br>${esc(catLabel(crime.cat))}, average per month${u}<br>
+    A · ${esc(periodLabel(crime.A))}: <strong>${fmtAvg(it.a)}</strong><br>B · ${esc(periodLabel(crime.B))}: <strong>${fmtAvg(it.b)}</strong><br>Change (B − A): <strong>${fmtAvgDiff(it.b - it.a)}</strong>`;
+}
+/** [segment index, Leaflet layer] pairs for every centerline that has crime data (built once). */
+async function crimeSegmentLines() {
+  if (crime.segFeatures) return crime.segFeatures;
+  const [feats] = await Promise.all([loadCityStreets(), loadCrimeSegments()]);
+  const out = [];
+  for (const f of feats) {
+    const p = f.properties || {}, id = Number(p.seg_id ?? p.SEG_ID);
+    const idx = crime.segById.get(id);
+    if (idx === undefined) continue;
+    const layer = L.GeoJSON.geometryToLayer(f);
+    layer.feature = f;
+    out.push([idx, layer]);
+  }
+  if (!out.length) throw new Error('the street centerlines have no seg_id field');
+  crime.segFeatures = out;
+  return out;
+}
+let crimeMoveTimer = null;
+map.on('moveend', () => { if (!crime.on) return; clearTimeout(crimeMoveTimer); crimeMoveTimer = setTimeout(drawCrimeMap, 250); });
+
+/* ---------- charts (Chart.js) ---------- */
+// Shaded periods and dashed event lines on category (month or year) axes.
+const timeBands = {
+  id: 'timeBands',
+  beforeDatasetsDraw(chart, _args, opts) {
+    const x = chart.scales.x, { top, bottom } = chart.chartArea, ctx = chart.ctx;
+    if (!x || !opts || !opts.bands) return;
+    const step = x.getPixelForValue(1) - x.getPixelForValue(0) || 10;
+    ctx.save();
+    for (const b of opts.bands) {
+      if (b.from === null || b.to === null || b.from < 0) continue;
+      const x0 = x.getPixelForValue(b.from) - step / 2, x1 = x.getPixelForValue(b.to) + step / 2;
+      ctx.fillStyle = b.color; ctx.fillRect(x0, top, x1 - x0, bottom - top);
+      if (b.label) { ctx.fillStyle = b.ink || '#505B6E'; ctx.font = '600 10px Public Sans, sans-serif'; ctx.fillText(b.label, x0 + 3, top + 10 + (b.row || 0) * 11); }
+    }
+    for (const l of opts.lines || []) {
+      if (l.at === null || l.at < 0) continue;
+      const px = x.getPixelForValue(l.at);
+      ctx.strokeStyle = '#1C2433'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, bottom); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#1C2433'; ctx.font = '600 10px Public Sans, sans-serif';
+      ctx.save(); ctx.translate(px + 3, bottom - 4); ctx.rotate(-Math.PI / 2); ctx.fillText(l.label, 0, 0); ctx.restore();
+    }
+    ctx.restore();
+  },
+};
+if (window.Chart) Chart.register(timeBands);
+
+function bandsFor(labels, kind, isYear) {
+  const at = v => labels.indexOf(v);
+  const covid = isYear ? [at(COVID_PERIOD.start.slice(0, 4)), at(COVID_PERIOD.end.slice(0, 4))] : [at(COVID_PERIOD.start), at(COVID_PERIOD.end)];
+  const bands = [{ from: covid[0], to: covid[1], color: 'rgba(201,138,27,0.16)', label: COVID_PERIOD.label, ink: '#7A5410' }];
+  if (!isYear) {
+    for (const [side, color, row] of [['A', 'rgba(107,44,145,0.13)', 1], ['B', 'rgba(31,111,120,0.15)', 2]]) {
+      const r = periodRange(crime[side]);
+      if (r) bands.push({ from: r.i0, to: r.i1, color, label: side, ink: side === 'A' ? '#6B2C91' : '#1F6F78', row });
+    }
+  }
+  const lines = POLICY_EVENTS.filter(e => e.applies === 'all' || e.applies === kind)
+    .map(e => ({ at: at(isYear ? e.month.slice(0, 4) : e.month), label: e.label }));
+  return { bands, lines };
+}
+function destroyCrimeCharts() { crime.charts.forEach(c => c.destroy()); crime.charts = []; }
+const CHART_FONT = { family: "'Public Sans', system-ui, sans-serif", size: 11 };
+function lineChart(canvas, labels, datasets, kind) {
+  const c = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets: datasets.map(d => ({ ...d, borderWidth: 1.6, pointRadius: 0, pointHitRadius: 6, tension: 0.15, spanGaps: false })) },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { font: CHART_FONT, boxWidth: 12 } }, timeBands: bandsFor(labels, kind, false),
+        tooltip: { callbacks: { title: it => ymLabel(labels[it[0].dataIndex]), label: it => `${it.dataset.label}: ${Math.round(it.parsed.y).toLocaleString()}` } },
+      },
+      scales: {
+        x: { ticks: { font: CHART_FONT, autoSkip: false, maxRotation: 0, callback: (_v, i) => (labels[i].endsWith('-01') && Number(labels[i].slice(0, 4)) % 2 === 0 ? labels[i].slice(0, 4) : '') }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { font: CHART_FONT }, grid: { color: '#E8ECF1' } },
+      },
+    },
+  });
+  crime.charts.push(c);
+}
+function barChart(canvas, labels, datasets, { kind, stacked = false, horizontal = false, isYear = true, unit = '' } = {}) {
+  const c = new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, indexAxis: horizontal ? 'y' : 'x',
+      plugins: {
+        legend: { display: datasets.length > 1, labels: { font: CHART_FONT, boxWidth: 12 } },
+        timeBands: horizontal ? {} : bandsFor(labels, kind, isYear),
+        tooltip: { callbacks: { label: it => `${it.dataset.label}: ${fmtAvg(horizontal ? it.parsed.x : it.parsed.y)}${unit}` } },
+      },
+      scales: {
+        x: { stacked, ticks: { font: CHART_FONT }, grid: { display: horizontal, color: '#E8ECF1' } },
+        y: { stacked, beginAtZero: true, ticks: { font: CHART_FONT }, grid: { display: !horizontal, color: '#E8ECF1' } },
+      },
+    },
+  });
+  crime.charts.push(c);
+}
+
+/** Monthly series clipped to a kind's coverage (months before the data starts are gaps, not zeros). */
+function covSeries(mat, cat) {
+  const s = seriesMatrix(mat, cat), cov = crime.meta.coverage[catKind(cat)];
+  return Array.from(s, (v, i) => (cov && (crime.months[i] < cov.first || crime.months[i] > cov.last) ? null : v));
+}
+/** Average per month for each calendar year, for the given categories. */
+function yearlyAvg(mat, cat) {
+  const years = [...new Set(crime.months.map(m => m.slice(0, 4)))];
+  return years.map(y => { const r = periodRange({ type: 'year', from: `${y}-01`, to: `${y}-12` }, catKind(cat)); return r ? sumMatrix(mat, cat, r) / r.n : null; });
+}
+
+/* ---------- the Crime tab ---------- */
+function crimeScopeOptions() {
+  const opts = [['city', 'Citywide']];
+  const sel = state.analysisSelection || {};
+  if (sel.type !== 'whole' || state.plan.areas.length) opts.push(['sel', `Current selection: ${crimeSelName()}`]);
+  const add = (group, k, label) => opts.push([`${group}:${k}`, label]);
+  Object.keys(crime.areaRaw.division || {}).sort().forEach(k => add('division', k, `${k} Division`));
+  Object.keys(crime.areaRaw.dist || {}).sort().forEach(k => add('dist', k, `${ordinal(Number(k))} District`));
+  Object.keys(crime.areaRaw.psa || {}).sort().forEach(k => add('psa', k, psaLabel(k)));
+  return opts;
+}
+function crimeScopeName(scope) {
+  const o = crimeScopeOptions().find(x => x[0] === scope);
+  return o ? o[1].replace(/^Current selection: /, '') : 'Citywide';
+}
+function crimeCatOptions() {
+  const o = (v, t) => `<option value="${esc(v)}" ${crime.cat === v ? 'selected' : ''}>${esc(t)}</option>`;
+  let html = `<optgroup label="Totals">${o('crime', 'All reported crime')}${o('violent', 'Violent (UCR 100, 200, 300, 400, 800)')}${o('nonviolent', 'Nonviolent (all other codes)')}</optgroup>`;
+  for (const [cls, title] of [['violent', 'Violent offense codes'], ['nonviolent', 'Nonviolent offense codes']]) {
+    html += `<optgroup label="${title}">`;
+    for (const code of ucrCodes().filter(c => VIOLENT_UCR.includes(c) === (cls === 'violent'))) {
+      html += o(`ucr:${code}`, `${code} · ${ucrName(code)}`);
+      const subs = crime.offs.map((x, i) => [x, i]).filter(([x]) => x.kind === 'crime' && x.ucr === code);
+      if (subs.length > 1) subs.forEach(([x, i]) => { html += o(`off:${i}`, `     ${x.label}`); });
+    }
+    html += '</optgroup>';
+  }
+  const extra = kind => crime.offs.map((x, i) => [x, i]).filter(([x]) => x.kind === kind);
+  if (extra('shooting').length) html += `<optgroup label="Shootings (from ${crime.meta.coverage.shooting.first.slice(0, 4)})">${o('shooting', 'All shooting victims')}${extra('shooting').map(([x, i]) => o(`off:${i}`, x.label)).join('')}</optgroup>`;
+  if (extra('stop').length) html += `<optgroup label="Police stops (from ${crime.meta.coverage.stop.first.slice(0, 4)})">${o('stop', 'All vehicle and pedestrian stops')}${extra('stop').map(([x, i]) => o(`off:${i}`, x.label === 'Vehicle stop' ? 'Vehicle stops (traffic stops)' : x.label)).join('')}</optgroup>`;
+  return html.replace(/> {5}/g, '>    ');
+}
+function periodControls(side) {
+  const p = crime[side], years = [...new Set(crime.months.map(m => m.slice(0, 4)))];
+  const ySel = (f, val) => `<select class="small" data-p="${side}" data-f="${f}">${years.map(y => `<option ${y === val ? 'selected' : ''}>${y}</option>`).join('')}</select>`;
+  const mSel = (f, val) => `<select class="small" data-p="${side}" data-f="${f}">${MONTH_ABBR.map((m, i) => { const v = String(i + 1).padStart(2, '0'); return `<option value="${v}" ${v === val ? 'selected' : ''}>${m}</option>`; }).join('')}</select>`;
+  let body;
+  if (p.type === 'year') body = ySel('fy', p.from.slice(0, 4));
+  else if (p.type === 'month') body = mSel('fm', p.from.slice(5)) + ySel('fy', p.from.slice(0, 4));
+  else body = `${mSel('fm', p.from.slice(5))}${ySel('fy', p.from.slice(0, 4))}<span>to</span>${mSel('tm', p.to.slice(5))}${ySel('ty', p.to.slice(0, 4))}`;
+  const r = periodRange(p, catKind(crime.cat));
+  return `<div class="crime-period"><span class="badge" style="background:${side === 'A' ? CMP_COLORS.A : CMP_COLORS.B}">${side}</span>
+    <select class="small" data-p="${side}" data-f="type"><option value="year" ${p.type === 'year' ? 'selected' : ''}>Year</option><option value="month" ${p.type === 'month' ? 'selected' : ''}>Month</option><option value="range" ${p.type === 'range' ? 'selected' : ''}>Range</option></select>
+    ${body}<span class="pmeta">${r ? `${r.n} month${r.n === 1 ? '' : 's'}` : 'no data'}</span></div>`;
+}
+function readPeriod(side, root) {
+  const g = f => { const el = root.querySelector(`[data-p="${side}"][data-f="${f}"]`); return el ? el.value : null; };
+  const type = g('type'), old = crime[side];
+  const fy = g('fy') || old.from.slice(0, 4), fm = g('fm') || old.from.slice(5);
+  if (type === 'year') return yearPeriod(fy);
+  if (type === 'month') return { type, from: `${fy}-${fm}`, to: `${fy}-${fm}` };
+  const ty = g('ty') || old.to.slice(0, 4), tm = g('tm') || old.to.slice(5);
+  let from = `${fy}-${fm}`, to = `${ty}-${tm}`;
+  if (to < from) [from, to] = [to, from];
+  return { type, from, to };
+}
+
+/** The scope's monthly matrix: instant for city/division/district/PSA; the selection needs every year file. */
+function scopeMatrixNow() {
+  if (crime.scope === 'sel') { const t = crimeTarget(); return t ? crime.polyMatCache.get(t.key) || null : null; }
+  return areaMatrix(crime.scope);
+}
+/** Name of the current Demographics selection, without running the analysis. */
+function crimeSelName() {
+  const sel = state.analysisSelection || {};
+  if (sel.type === 'reference') return sel.name || 'Selected polygon';
+  if (sel.type === 'plan') { const a = state.plan.areas.find(x => x.id === sel.id); if (a) return a.name || 'Unnamed area'; }
+  return 'Whole plan';
+}
+const crimeUnionCache = new Map();
+/** Geometry, cache key and name of the current Demographics selection (or the whole plan). withStats adds its demographics. */
+function crimeTarget(withStats = false) {
+  const sel = state.analysisSelection || {};
+  let key, geometry;
+  const a = sel.type === 'plan' && state.plan.areas.find(x => x.id === sel.id);
+  if (sel.type === 'reference' && sel.geometry) { key = `r:${sel.name}:${JSON.stringify(sel.geometry).length}`; geometry = sel.geometry; }
+  else if (a) { key = `p:${a.id}:${a.rev}`; geometry = a.geometry; }
+  else {
+    if (!state.plan.areas.length) return null;
+    key = `w:${state.plan.areas.map(x => `${x.id}:${x.rev}`).join(',')}`;
+    if (!crimeUnionCache.has(key)) crimeUnionCache.set(key, unionGeometry(state.plan.areas));
+    geometry = crimeUnionCache.get(key);
+    if (!geometry) return null;
+  }
+  const t = { key, geometry, name: crimeSelName() };
+  if (withStats) t.r = analysisResult().r;
+  return t;
+}
+
+function renderCrime() {
+  const box = $('#crime');
+  if (!box) return;
+  destroyCrimeCharts();
+  if (crime.status === 'idle' || crime.status === 'loading') { box.innerHTML = '<p class="empty">Loading crime data…</p>'; return; }
+  if (crime.status !== 'ready') {
+    box.innerHTML = `<div class="demo-status error" style="margin:16px 20px"><strong>Crime data isn't in docs/data/crime yet.</strong><br>Run <code>python scripts/06_crime_data.py</code> from the repo folder, then commit <code>docs/data/crime/</code>, <code>police_psa.geojson</code> and <code>police_divisions.geojson</code>.<br><span style="color:#505B6E">${esc(crime.error)}</span></div>`;
+    return;
+  }
+  if (!crimeScopeOptions().some(o => o[0] === crime.scope)) crime.scope = 'city';
+  const kind = catKind(crime.cat);
+  const scopeSel = crimeScopeOptions().map(([v, t]) => `<option value="${esc(v)}" ${v === crime.scope ? 'selected' : ''}>${esc(t)}</option>`).join('');
+  const m = crime.meta;
+  box.innerHTML = `
+    <div class="cmp-head">
+      <h2 style="margin:0;font-size:16px">Crime, shootings and police stops</h2>
+      <p class="summary" style="margin:0">Reported to the Philadelphia Police Department, ${esc(ymLabel(crime.months[0]))} to ${esc(ymLabel(crime.months[crime.months.length - 1]))}. Every number is an <strong>average per month</strong> over the period, and change is <strong>B − A</strong> in that unit.</p>
+    </div>
+    <div class="crime-controls">
+      <label>Offense or record type<select data-c="cat">${crimeCatOptions()}</select></label>
+      ${periodControls('A')}${periodControls('B')}
+      <div class="row"><button class="btn quiet small" data-c="swap">Swap A ↔ B</button></div>
+    </div>
+    <h2 class="section-title">Map</h2>
+    <div class="crime-controls">
+      <label class="inline"><input type="checkbox" data-c="on" ${crime.on ? 'checked' : ''}> Show on map</label>
+      <div class="crime-grid">
+        <label>Map shows<select data-c="view"><option value="diff" ${crime.view === 'diff' ? 'selected' : ''}>Change (B − A)</option><option value="B" ${crime.view === 'B' ? 'selected' : ''}>Period B</option><option value="A" ${crime.view === 'A' ? 'selected' : ''}>Period A</option></select></label>
+        <label>Geography<select data-c="geo">${[['auto', 'Auto: streets up close, PSAs, then districts'], ['seg', 'Street segments'], ['psa', 'Police service areas'], ['dist', 'Police districts'], ['division', 'Police divisions']]
+          .map(([v, t]) => `<option value="${v}" ${crime.geo === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      </div>
+      <label class="inline"><input type="checkbox" data-c="perLength" ${crime.perLength ? 'checked' : ''}> On streets, divide by segment length (per 1,000 ft)</label>
+      <p class="fieldnote">Auto shows street segments at zoom ${CRIME_SEG_MIN_ZOOM}+, PSAs at ${CRIME_PSA_MIN_ZOOM}–${CRIME_SEG_MIN_ZOOM - 1}, districts farther out. Click a district or PSA for its police contacts and demographics.</p>
+    </div>
+    <h2 class="section-title">Charts and tables</h2>
+    <div class="crime-controls"><label>Area<select data-c="scope">${scopeSel}</select></label><div id="crime-scope-status" class="fieldnote"></div></div>
+    <div id="crime-body"></div>
+    ${crimeLimitsHtml()}`;
+  renderCrimeBody();
+}
+
+function renderCrimeBody() {
+  const body = $('#crime-body');
+  if (!body) return;
+  destroyCrimeCharts();
+  const mat = scopeMatrixNow(), status = $('#crime-scope-status');
+  if (!mat) {
+    const t = crimeTarget();
+    if (!t) { body.innerHTML = '<p class="empty">Select a planning polygon or a map boundary first.</p>'; return; }
+    body.innerHTML = `<p class="empty">The full history for <strong>${esc(t.name)}</strong> is built from every year of street-segment data (${crime.meta.years.length} files).</p>
+      <div style="padding:0 20px"><button class="btn" data-c="history" ${crime.loadingHistory ? 'disabled' : ''}>${crime.loadingHistory ? 'Loading…' : 'Load full history for this area'}</button></div>`;
+    return;
+  }
+  if (status) status.textContent = crime.scope === 'sel' ? 'Counted on street segments whose midpoint is inside the area. Records without a location are left out.' : '';
+  const kind = catKind(crime.cat), labels = crime.months, years = [...new Set(labels.map(x => x.slice(0, 4)))];
+  const lastYear = years[years.length - 1], lastMonths = labels.filter(x => x.startsWith(lastYear)).length;
+  const yLabels = years.map(y => (y === lastYear && lastMonths < 12 ? `${y}` : y));
+  let html = `
+    <div class="crime-chart"><h3>Monthly ${esc(crime.cat === 'crime' ? 'reported crime' : catLabel(crime.cat).toLowerCase())}</h3><div class="cbox"><canvas id="ch-monthly"></canvas></div>
+      <p class="fieldnote">Count per month. Shaded: <span class="tagc covid">${COVID_PERIOD.label} (${ymLabel(COVID_PERIOD.start)} – ${ymLabel(COVID_PERIOD.end)})</span> <span class="tagc a">A</span> <span class="tagc b">B</span>${POLICY_EVENTS.length ? ' · dashed lines: laws and policy changes' : ''}</p></div>
+    <div class="crime-chart"><h3>Average per month, by year</h3><div class="cbox"><canvas id="ch-yearly"></canvas></div>
+      <p class="fieldnote">${lastMonths < 12 ? `${lastYear} covers ${lastMonths} month${lastMonths === 1 ? '' : 's'} so far; the monthly average keeps it comparable. ` : ''}COVID years shaded.</p></div>`;
+  const hasShoot = crime.offs.some(o => o.kind === 'shooting'), hasStop = crime.offs.some(o => o.kind === 'stop');
+  if (hasShoot) html += `<div class="crime-chart"><h3>Shooting victims per month</h3><div class="cbox"><canvas id="ch-shoot"></canvas></div></div>`;
+  if (hasStop) html += `<div class="crime-chart"><h3>Police stops per month</h3><div class="cbox"><canvas id="ch-stops"></canvas></div><p class="fieldnote">Stops measure police activity, not crime.</p></div>`;
+  html += `<div class="crime-chart"><h3>Change by offense code, B − A</h3><div class="cbox tall"><canvas id="ch-diff"></canvas></div><p class="fieldnote">Average per month. Red is an increase, blue a decrease.</p></div>`;
+  html += offenseTableHtml(mat);
+  html += districtTablesHtml();
+  body.innerHTML = html;
+
+  const sets = crime.cat === 'crime'
+    ? [{ label: 'Violent', data: covSeries(mat, 'violent'), borderColor: '#B2182B', backgroundColor: '#B2182B' }, { label: 'Nonviolent', data: covSeries(mat, 'nonviolent'), borderColor: '#4E5968', backgroundColor: '#4E5968' }]
+    : [{ label: catLabel(crime.cat), data: covSeries(mat, crime.cat), borderColor: '#B2182B', backgroundColor: '#B2182B' }];
+  lineChart($('#ch-monthly'), labels, sets, kind);
+  const ysets = crime.cat === 'crime'
+    ? [{ label: 'Violent', data: yearlyAvg(mat, 'violent'), backgroundColor: '#B2182B' }, { label: 'Nonviolent', data: yearlyAvg(mat, 'nonviolent'), backgroundColor: '#9AA3B2' }]
+    : [{ label: catLabel(crime.cat), data: yearlyAvg(mat, crime.cat), backgroundColor: '#B2182B' }];
+  barChart($('#ch-yearly'), yLabels, ysets, { kind, stacked: crime.cat === 'crime', unit: ' per month' });
+  const offsOf = k => crime.offs.map((x, i) => [x, i]).filter(([x]) => x.kind === k);
+  if (hasShoot) lineChart($('#ch-shoot'), labels, offsOf('shooting').map(([x, i], j) => ({ label: x.label.replace('Shooting victim - ', ''), data: covSeries(mat, `off:${i}`), borderColor: j ? '#4E5968' : '#9E0F16', backgroundColor: j ? '#4E5968' : '#9E0F16' })), 'shooting');
+  if (hasStop) lineChart($('#ch-stops'), labels, offsOf('stop').map(([x, i]) => ({ label: x.label === 'Vehicle stop' ? 'Vehicle (traffic) stops' : 'Pedestrian stops', data: covSeries(mat, `off:${i}`), borderColor: x.label === 'Vehicle stop' ? '#27407A' : '#C98A1B', backgroundColor: x.label === 'Vehicle stop' ? '#27407A' : '#C98A1B' })), 'stop');
+  const codes = [...ucrCodes().map(c => [`ucr:${c}`, `${c} ${ucrName(c)}`]), ...(hasShoot ? [['shooting', 'Shooting victims']] : []), ...offsOf('stop').map(([x, i]) => [`off:${i}`, x.label + 's'])];
+  const diffs = codes.map(([c]) => { const a = avgMatrix(mat, c, crime.A), b = avgMatrix(mat, c, crime.B); return a === null || b === null ? null : b - a; });
+  const cdiff = new Chart($('#ch-diff'), {
+    type: 'bar',
+    data: { labels: codes.map(c => c[1]), datasets: [{ label: 'B − A per month', data: diffs, backgroundColor: diffs.map(d => (d > 0 ? '#B2182B' : '#2166AC')) }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: it => `B − A: ${fmtAvgDiff(it.parsed.x)} per month` } } },
+      scales: { x: { ticks: { font: CHART_FONT }, grid: { color: '#E8ECF1' } }, y: { ticks: { font: { ...CHART_FONT, size: 10 }, autoSkip: false }, grid: { display: false } } } },
+  });
+  crime.charts.push(cdiff);
+}
+
+/** DAO-style table: every offense, average per month in A and B, and the change. Rows set the map category. */
+function offenseTableHtml(mat) {
+  const row = (cat, label, cls = '') => {
+    const a = avgMatrix(mat, cat, crime.A), b = avgMatrix(mat, cat, crime.B), d = a === null || b === null ? null : b - a;
+    return `<tr class="${cls}${crime.cat === cat ? ' on' : ''}" data-cat="${esc(cat)}"><td>${esc(label)}</td><td>${fmtAvg(a)}</td><td>${fmtAvg(b)}</td><td class="diff ${diffClass(d)}">${fmtAvgDiff(d)}</td></tr>`;
+  };
+  let rows = row('crime', 'All reported crime', 'total');
+  for (const [cls, title] of [['violent', 'Violent crime'], ['nonviolent', 'Nonviolent crime']]) {
+    rows += row(cls, title, 'subtotal');
+    for (const code of ucrCodes().filter(c => VIOLENT_UCR.includes(c) === (cls === 'violent'))) {
+      rows += row(`ucr:${code}`, `${code} · ${ucrName(code)}`);
+      const subs = crime.offs.map((x, i) => [x, i]).filter(([x]) => x.kind === 'crime' && x.ucr === code);
+      if (subs.length > 1) subs.forEach(([x, i]) => { rows += row(`off:${i}`, x.label, 'sub'); });
+    }
+  }
+  for (const [k, title] of [['shooting', 'Shooting victims'], ['stop', 'Police stops']]) {
+    const list = crime.offs.map((x, i) => [x, i]).filter(([x]) => x.kind === k);
+    if (!list.length) continue;
+    rows += row(k, title, 'subtotal');
+    list.forEach(([x, i]) => { rows += row(`off:${i}`, x.label === 'Vehicle stop' ? 'Vehicle (traffic) stops' : x.label, 'sub'); });
+  }
+  return `<h3 class="crime-tt">Average per month by offense · ${esc(crimeScopeName(crime.scope))}</h3>
+    <div class="table-wrap"><table class="cmp crime-table"><thead><tr><th>Offense category</th><th>A · ${esc(periodLabel(crime.A))}</th><th>B · ${esc(periodLabel(crime.B))}</th><th>B − A</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="fieldnote" style="padding:0 20px">Click a row to map that offense. A dash means the period is outside that dataset's coverage.</p>`;
+}
+
+/** DAO-style tables by police district: A vs B, and the yearly average per month (COVID years marked). */
+function districtTablesHtml() {
+  const c = police.contacts, cat = crime.cat, kind = catKind(cat);
+  const divs = crime.meta.divisions || {}, years = [...new Set(crime.months.map(x => x.slice(0, 4)))].slice(-7);
+  const covid = y => y >= COVID_PERIOD.start.slice(0, 4) && y <= COVID_PERIOD.end.slice(0, 4);
+  let ab = '', yr = '';
+  const line = (key, label, cls) => {
+    const mat = areaMatrix(key), a = avgMatrix(mat, cat, crime.A), b = avgMatrix(mat, cat, crime.B), d = a === null || b === null ? null : b - a;
+    ab += `<tr class="${cls}" data-scope="${esc(key)}"><td>${label}</td><td>${fmtAvg(a)}</td><td>${fmtAvg(b)}</td><td class="diff ${diffClass(d)}">${fmtAvgDiff(d)}</td></tr>`;
+    yr += `<tr class="${cls}" data-scope="${esc(key)}"><td>${label}</td>${years.map(y => { const r = periodRange(yearPeriod(y), kind); return `<td class="${covid(y) ? 'covid' : ''}">${r ? fmtAvg(sumMatrix(mat, cat, r) / r.n) : '–'}</td>`; }).join('')}</tr>`;
+  };
+  line('city', 'Citywide', 'total');
+  for (const [div, ds] of Object.entries(divs)) {
+    line(`division:${div}`, `${esc(div)} Division`, 'subtotal');
+    for (const d of ds) {
+      const info = c && c.districts[d];
+      line(`dist:${d}`, `${ordinal(Number(d))}${info ? ` <span class="captain">${esc(info.captain || '')}</span>` : ''}`, '');
+    }
+  }
+  return `<h3 class="crime-tt">${esc(catLabel(cat))} by police district · average per month</h3>
+    <div class="table-wrap"><table class="cmp crime-table"><thead><tr><th>Division / district</th><th>A · ${esc(periodLabel(crime.A))}</th><th>B · ${esc(periodLabel(crime.B))}</th><th>B − A</th></tr></thead><tbody>${ab}</tbody></table></div>
+    <h3 class="crime-tt">${esc(catLabel(cat))} by year and district · average per month</h3>
+    <div class="table-wrap"><table class="cmp crime-table"><thead><tr><th>Division / district</th>${years.map(y => `<th class="${covid(y) ? 'covid' : ''}">${y}${covid(y) ? '<br><span style="font-weight:500">COVID</span>' : ''}</th>`).join('')}</tr></thead><tbody>${yr}</tbody></table></div>
+    <p class="fieldnote" style="padding:0 20px">Click a row to chart that area. Districts are today's boundaries for every year. Commanding officers from phillypolice.com${c ? ` as of ${esc(c.as_of)}` : ''}.</p>`;
+}
+
+function crimeLimitsHtml() {
+  const m = crime.meta, qa = m.qa || {};
+  const yrs = Object.keys(qa).sort();
+  const sum = (src, f) => yrs.reduce((s, y) => s + ((qa[y][src] || {})[f] || 0), 0);
+  const inc = sum('incidents', 'records'), noXY = sum('incidents', 'no_coordinates'), off = sum('incidents', 'not_on_a_street');
+  const pct = (a, b) => (b ? ((a / b) * 100).toFixed(1) + '%' : '–');
+  const cov = k => (m.coverage[k] ? `${ymLabel(m.coverage[k].first)} – ${ymLabel(m.coverage[k].last)}` : 'not loaded');
+  return `<details class="crime-limits" open><summary>Data limits: read before using these numbers</summary><ul>
+    <li><strong>Reported incidents, not all crime.</strong> The data holds only what was reported to or found by PPD. Federal victimization surveys find fewer than half of violent crimes and even fewer property crimes are reported, and reporting varies by neighborhood and by trust in police.</li>
+    <li><strong>Preliminary classification.</strong> Each incident is classified when it is reported and may later change. These are not official UCR/NIBRS statistics and will not exactly match PPD or District Attorney reports.</li>
+    <li><strong>Violent = UCR 100, 200, 300, 400 and 800.</strong> 800 is "Other Assaults" (mostly simple assault), which the FBI counts as nonviolent Part II. Everything else is nonviolent.</li>
+    <li><strong>Location.</strong> Incidents are placed at the hundred block. Each record is snapped to the nearest street centerline within ${m.snap_feet} ft, and intersections fall on one of the meeting streets. Since ${yrs[0] || '–'}, ${pct(noXY, inc)} of incidents had no usable location and ${pct(off, inc)} were farther than ${m.snap_feet} ft from a street. They count in city, division, district and PSA totals but not on street segments or in drawn areas.</li>
+    <li><strong>Drawn areas</strong> count records on street segments whose midpoint is inside, so a boundary street may fall in or out.</li>
+    <li><strong>Boundaries.</strong> Every year uses today's police divisions, districts and PSAs.</li>
+    <li><strong>Shootings</strong> (${cov('shooting')}) count victims, not incidents, and include police officer-involved shootings.</li>
+    <li><strong>Vehicle and pedestrian stops</strong> (${cov('stop')}) measure police activity and enforcement choices, not crime. Policy changes alter them directly.</li>
+    <li><strong>Monthly average.</strong> Totals are divided by the months in the period that have data. The latest, incomplete month is left out.</li>
+    <li><strong>Change is B − A</strong> in average per month. Percent change is not shown because it swings wildly at small counts.</li>
+    <li><strong>Rates per resident</strong> overstate places where few people live but many pass through (Center City, commercial corridors, parks).</li>
+    <li><strong>COVID-19</strong> (${ymLabel(COVID_PERIOD.start)} – ${ymLabel(COVID_PERIOD.end)}) is shaded on every chart. Comparisons across it reflect lockdowns as well as crime.</li>
+    <li><strong>Use with care.</strong> High counts can reflect reporting and policing patterns. They are a reason to look closer, not a judgment of a neighborhood.</li>
+  </ul><p class="fieldnote">Built ${esc(m.generated)} by scripts/06_crime_data.py from
+    <a href="${esc(m.sources.incidents)}" target="_blank" rel="noopener">Crime Incidents</a> (${cov('crime')}),
+    <a href="${esc(m.sources.shootings)}" target="_blank" rel="noopener">Shooting Victims</a> and
+    <a href="${esc(m.sources.stops)}" target="_blank" rel="noopener">Vehicle &amp; Pedestrian Investigations</a> on OpenDataPhilly.</p></details>`;
+}
+
+/* ---------- Crime tab events ---------- */
+$('#crime').addEventListener('change', e => {
+  const t = e.target, c = t.dataset.c;
+  if (t.dataset.p) {
+    crime[t.dataset.p] = t.dataset.f === 'type' ? (() => { const old = crime[t.dataset.p]; return t.value === 'year' ? yearPeriod(old.from.slice(0, 4)) : t.value === 'month' ? { type: 'month', from: old.from, to: old.from } : { type: 'range', from: old.from, to: old.to }; })() : readPeriod(t.dataset.p, $('#crime'));
+    crimeChanged(); return;
+  }
+  if (c === 'cat') { crime.cat = t.value; crimeChanged(); }
+  if (c === 'on') { crime.on = t.checked; drawCrimeMap(); }
+  if (c === 'view') { crime.view = t.value; drawCrimeMap(); }
+  if (c === 'geo') {
+    crime.geo = t.value; drawCrimeMap();
+    if (t.value === 'seg' && map.getZoom() < CRIME_SEG_MIN_ZOOM) toast('Street segments are easiest to read at street zoom. Zoom in to see them clearly.');
+  }
+  if (c === 'perLength') { crime.perLength = t.checked; drawCrimeMap(); }
+  if (c === 'scope') { crime.scope = t.value; renderCrimeBody(); }
+});
+$('#crime').addEventListener('click', e => {
+  const btn = e.target.closest('[data-c]');
+  if (btn && btn.dataset.c === 'swap') { [crime.A, crime.B] = [crime.B, crime.A]; crimeChanged(); return; }
+  if (btn && btn.dataset.c === 'history') { loadScopeHistory(); return; }
+  const tr = e.target.closest('tr[data-cat], tr[data-scope]');
+  if (!tr) return;
+  if (tr.dataset.cat) { crime.cat = tr.dataset.cat; crimeChanged(); if (!crime.on) toast('Turn on "Show on map" to map this offense.'); }
+  else { crime.scope = tr.dataset.scope; renderCrime(); }
+});
+async function loadScopeHistory() {
+  const t = crimeTarget();
+  if (!t || crime.loadingHistory) return;
+  crime.loadingHistory = true; renderCrimeBody();
+  try {
+    await polygonMatrix(t.key, t.geometry, (i, n) => { const s = $('#crime-scope-status'); if (s) s.textContent = `Loading year ${i} of ${n}…`; });
+  } catch (err) { toast(`Couldn't load the street-segment history: ${err.message}`, 'error'); }
+  crime.loadingHistory = false;
+  if (crime.scope === 'sel') renderCrimeBody();
+}
+/** Category or period changed: refresh the tab, the map and the crime rows in Demographics and Compare. */
+function crimeChanged() {
+  renderCrime(); drawCrimeMap(); fillCrimeDemo();
+  if (!$('#panel-compare').hidden) fillCrimeCompare();
+}
+let crimeRenderTimer = null;
+function renderCrimeSoon() {
+  clearTimeout(crimeRenderTimer);
+  crimeRenderTimer = setTimeout(() => {
+    if (!$('#panel-crime').hidden) renderCrime();
+    fillCrimeDemo(); if (!$('#panel-compare').hidden) fillCrimeCompare();
+    if (crime.on) drawCrimeMap();
+  }, 80);
+}
+
+/* ---------- crime rows in Demographics and Compare ---------- */
+const CRIME_ROWS = () => {
+  const rows = [['crime', 'All reported crime'], ['violent', 'Violent crime'], ['nonviolent', 'Nonviolent crime']];
+  if (crime.offs.some(o => o.kind === 'shooting')) rows.push(['shooting', 'Shooting victims']);
+  crime.offs.forEach((o, i) => { if (o.kind === 'stop') rows.push([`off:${i}`, o.label === 'Vehicle stop' ? 'Vehicle (traffic) stops' : 'Pedestrian stops']); });
+  if (!rows.some(r => r[0] === crime.cat) && !['crime', 'stop'].includes(crime.cat)) rows.push([crime.cat, catLabel(crime.cat)]);
+  return rows;
+};
+let crimeDemoSeq = 0;
+/** Fill the crime section of the Demographics tab for the current selection (async; street-segment files load on demand). */
+async function fillCrimeDemo(r) {
+  const box = $('#crime-demo');
+  if (!box) return;
+  if (crime.status !== 'ready') {
+    box.innerHTML = crime.status === 'loading' || crime.status === 'idle' ? '' : '<div class="group"><h3>Crime and police activity</h3><p class="note" style="margin-top:4px">Crime data is not loaded. Run scripts/06_crime_data.py.</p></div>';
+    return;
+  }
+  const t = crimeTarget(r === undefined);
+  if (!t) { box.innerHTML = ''; return; }
+  if (r !== undefined) t.r = r;
+  const seq = ++crimeDemoSeq;
+  box.innerHTML = '<div class="group"><h3>Crime and police activity</h3><p class="note" style="margin-top:4px">Loading street-segment counts…</p></div>';
+  try {
+    const rows = CRIME_ROWS(), inside = await segsInside(t.key, t.geometry);
+    const vals = await Promise.all(rows.map(async ([cat]) => [await polygonAvg(t.key, t.geometry, crime.A, cat), await polygonAvg(t.key, t.geometry, crime.B, cat)]));
+    if (seq !== crimeDemoSeq || !$('#crime-demo')) return;
+    const pop = t.r && t.r.demo && Number.isFinite(t.r.demo.vals.hh_pop) ? t.r.demo.vals.hh_pop : null;
+    const [ca, cb] = vals[0];
+    const per = (v, d) => (v === null || !d ? null : v / d);
+    let body = rows.map(([cat, label], i) => { const [a, b] = vals[i]; const d = a === null || b === null ? null : b - a; return `<tr><td>${esc(label)}</td><td>${fmtAvg(a)}</td><td>${fmtAvg(b)}</td><td class="diff ${diffClass(d)}">${fmtAvgDiff(d)}</td></tr>`; }).join('');
+    const pa = per(ca, pop && pop / 1000), pb = per(cb, pop && pop / 1000), ma = per(ca, inside.miles), mb = per(cb, inside.miles);
+    body += `<tr><td>Crime per 1,000 residents</td><td>${fmtAvg(pa)}</td><td>${fmtAvg(pb)}</td><td class="diff ${diffClass(pb - pa)}">${fmtAvgDiff(pa === null || pb === null ? null : pb - pa)}</td></tr>`;
+    body += `<tr><td>Crime per street-mile</td><td>${fmtAvg(ma)}</td><td>${fmtAvg(mb)}</td><td class="diff ${diffClass(mb - ma)}">${fmtAvgDiff(ma === null || mb === null ? null : mb - ma)}</td></tr>`;
+    box.innerHTML = `<div class="group"><h3>Crime and police activity · average per month</h3>
+      <div class="table-wrap" style="padding:0"><table class="cmp crime-table"><thead><tr><th></th><th>A · ${esc(periodLabel(crime.A))}</th><th>B · ${esc(periodLabel(crime.B))}</th><th>B − A</th></tr></thead><tbody>${body}</tbody></table></div>
+      <p class="note" style="margin-top:6px">Reported to PPD, on ${inside.idx.length.toLocaleString()} street segments (${inside.miles.toFixed(1)} street-miles) whose midpoint is inside. Change the periods or offense in the <a href="#" data-goto="crime">Crime tab</a>, which also lists the data limits.</p></div>`;
+    box.querySelector('[data-goto]').addEventListener('click', ev => { ev.preventDefault(); showTab('crime'); });
+  } catch (err) {
+    if (seq === crimeDemoSeq && $('#crime-demo')) box.innerHTML = `<div class="group"><h3>Crime and police activity</h3><p class="note">Couldn't load crime counts: ${esc(err.message)}</p></div>`;
+  }
+}
+let crimeCmpSeq = 0;
+/** Crime rows for the Compare tab: area A vs area B over crime period B. */
+async function fillCrimeCompare() {
+  const box = $('#crime-cmp');
+  if (!box || crime.status !== 'ready') { if (box) box.innerHTML = ''; return; }
+  const a = resolveCompare(state.compareA), b = resolveCompare(state.compareB);
+  if (!a || !b || !a.geometry || !b.geometry) { box.innerHTML = ''; return; }
+  const seq = ++crimeCmpSeq, ka = `cmpA:${a.name}:${JSON.stringify(a.geometry).length}`, kb = `cmpB:${b.name}:${JSON.stringify(b.geometry).length}`;
+  box.innerHTML = '<p class="note" style="padding:0 20px">Loading crime counts…</p>';
+  try {
+    const rows = CRIME_ROWS();
+    const vals = await Promise.all(rows.map(async ([cat]) => [await polygonAvg(ka, a.geometry, crime.B, cat), await polygonAvg(kb, b.geometry, crime.B, cat)]));
+    const [ia, ib] = await Promise.all([segsInside(ka, a.geometry), segsInside(kb, b.geometry)]);
+    if (seq !== crimeCmpSeq || !$('#crime-cmp')) return;
+    const popA = a.stats && a.stats.demo ? a.stats.demo.vals.hh_pop : null, popB = b.stats && b.stats.demo ? b.stats.demo.vals.hh_pop : null;
+    let body = rows.map(([, label], i) => { const [x, y] = vals[i]; const d = x === null || y === null ? null : x - y; return `<tr><td>${esc(label)}</td><td>${fmtAvg(x)}</td><td>${fmtAvg(y)}</td><td class="diff">${fmtAvgDiff(d)}</td></tr>`; }).join('');
+    const ra = popA ? vals[0][0] / (popA / 1000) : null, rb = popB ? vals[0][1] / (popB / 1000) : null;
+    const ma = ia.miles ? vals[0][0] / ia.miles : null, mb = ib.miles ? vals[0][1] / ib.miles : null;
+    body += `<tr><td>Crime per 1,000 residents</td><td>${fmtAvg(ra)}</td><td>${fmtAvg(rb)}</td><td class="diff">${fmtAvgDiff(ra === null || rb === null ? null : ra - rb)}</td></tr>`;
+    body += `<tr><td>Crime per street-mile</td><td>${fmtAvg(ma)}</td><td>${fmtAvg(mb)}</td><td class="diff">${fmtAvgDiff(ma === null || mb === null ? null : ma - mb)}</td></tr>`;
+    box.innerHTML = `<div class="table-wrap"><table class="cmp"><thead><tr><th>Crime · avg per month, ${esc(periodLabel(crime.B))}</th><th>A</th><th>B</th><th>A − B</th></tr></thead><tbody>${body}</tbody></table></div>
+      <p class="note" style="padding:0 20px">Reported to PPD; uses crime period B from the Crime tab. See the Crime tab for data limits.</p>`;
+  } catch (err) {
+    if (seq === crimeCmpSeq) box.innerHTML = `<p class="note" style="padding:0 20px">Couldn't load crime counts: ${esc(err.message)}</p>`;
+  }
+}
+
+/* ================================================================== *
+ * §21 Wiring and start-up
  *     Button handlers and initializeApp(), the start-up sequence.
  * ================================================================== */
 $('#plan-name').addEventListener('input', e => { state.plan.name = e.target.value || 'Untitled plan'; renderCompareSoon(); autosave(); });
@@ -3053,6 +4034,8 @@ $('#btn-new-plan').addEventListener('click', async () => {
  */
 async function initializeApp() {
   renderSlots();
+  loadPoliceContacts();   // district/division contacts for popups
+  loadCrimeMeta();        // crime tab; street-segment files load later, on demand
   await Promise.all([loadBaseLayers(), loadOutreachZips()]);
   await loadDemographicSources();
 
@@ -3080,7 +4063,7 @@ async function initializeApp() {
 initializeApp();
 // Handy from the browser console when debugging, e.g. __planner.state.plan.areas
 window.__planner = { state, map, addArea, analyze, undo, redo, history, picker, copyArea, savePlan, planFeatureCollection, changedAreas, openPlan,
-  snapArea, snapToBlocks, setPanelCollapsed, refreshPoi, renderCompare };
+  snapArea, snapToBlocks, setPanelCollapsed, refreshPoi, renderCompare, crime, drawCrimeMap, renderCrime };
 })();
 </script>
 </body>

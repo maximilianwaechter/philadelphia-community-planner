@@ -51,7 +51,8 @@ philadelphia-community-planner/
 │   ├── 02_build_building_model.py     (was philly_building.py)
 │   ├── 03_prepare_web_data.py         (was prepare_web_data.py)
 │   ├── 04_download_reference_layers.py  police districts, ZIPs, wards, divisions
-│   └── 05_outreach_heatmap.py           privacy-safe outreach heat map
+│   ├── 05_outreach_heatmap.py           privacy-safe outreach heat map
+│   └── 06_crime_data.py                 PPD crime, shootings, stops; PSAs and divisions
 ├── data/                     NOT in git (big or private)
 │   ├── raw/                  downloads you put here yourself
 │   │   └── outreach/         member exports (private!)
@@ -109,7 +110,17 @@ python scripts/02_build_building_model.py       # 10-30 min
 python scripts/03_prepare_web_data.py
 python scripts/04_download_reference_layers.py
 python scripts/05_outreach_heatmap.py           # only when the member list changes
+python scripts/06_crime_data.py                 # 20-40 min the first time; monthly after that
 ```
+
+Script 06 downloads every PPD crime incident (2006 on), shooting victim (2015
+on) and vehicle/pedestrian stop (2014 on), snaps each to its street segment,
+and writes `docs/data/crime/` plus `police_psa.geojson` and
+`police_divisions.geojson`. Raw downloads are cached in
+`data/processed/crime/raw/`, so later runs only re-fetch the last two years.
+`--start 2015` builds fewer years; `--refresh` re-downloads everything.
+Police contacts for popups live in `docs/data/police_contacts.json`. Edit it
+by hand when a captain changes (check phillypolice.com).
 
 Script 02 prints an **OPA / footprint diagnostics** block. Check it the first
 time. The earlier model placed only ~85,000 units for ~680,000 households, and
@@ -249,6 +260,17 @@ a private repo needs a paid GitHub plan.
   shown at street zoom. Clicking one opens a place card with Directions,
   Google Maps and Street View links. Right-click anywhere on the map for the
   same Google links for that spot. No API key is needed.
+- **Crime** tab: PPD crime incidents, shooting victims and vehicle (traffic)
+  and pedestrian stops. Pick an offense (totals, violent = UCR 100, 200, 300,
+  400, 800, nonviolent, any single code or offense) and two periods (a month,
+  a year or a range). Everything is an average per month; change is B − A,
+  never a percentage. The map shows street segments up close, PSAs and
+  districts farther out (or one geography you pick). Charts mark COVID-19 and
+  periods A and B; DAO-style tables break the numbers down by offense and by
+  district. The Demographics and Compare tabs gain crime rows, and the tab
+  lists the data limits.
+- **Police divisions, districts and PSAs**: click any of them (or a police
+  station) for the commanding officer, address, phone and email.
 - **Street centerlines** (Plan tab, off by default), from the City's live
   `Street_Centerline` service:
   - the checkbox shows every centerline in the city (loaded once per
