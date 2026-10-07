@@ -626,6 +626,11 @@ const SLOTS = [
     style: { color: C.heat, fillOpacity: 0.8, radius: 24 }, help: 'Where program members live, grouped into ~250 m cells. Every polygon’s demographics include a member count.' },
 ];
 
+// Layers switched on when the app opens. Everything else starts off; turn it on in the Layers tab.
+// Planning polygons (the Plan tab) are always drawn.
+const START_VISIBLE = new Set(['tuBuildings', 'police']);
+SLOTS.forEach(s => { s.visible = START_VISIBLE.has(s.key); });
+
 // ACS count fields and the building weight used to split them inside a polygon.
 //   pop: people   hhpop: household population   occ: households   own/rnt: owner/renter households
 const WEIGHT_CLASS = {
@@ -3099,6 +3104,7 @@ function renderCompareSoon() { clearTimeout(cmpTimer); cmpTimer = setTimeout(() 
  *     zoomed out ("Auto"), or one geography the user picks.
  * ================================================================== */
 const CRIME_DIR = 'data/crime/';
+const CRIME_START = '2014-01';     // months before this are dropped when the crime data loads
 const CONTACTS_URL = 'data/police_contacts.json';
 const VIOLENT_UCR = [100, 200, 300, 400, 800];
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -3184,6 +3190,15 @@ async function loadCrimeMeta() {
   crime.status = 'loading';
   try {
     const meta = await fetchJSON(CRIME_DIR + 'meta.json');
+    // Keep CRIME_START onward only. Remember how many months were dropped (monthOffset).
+    const keepFrom = meta.months.findIndex(m => m >= CRIME_START);
+    if (keepFrom < 0) throw new Error(`no crime data from ${CRIME_START} on`);
+    crime.monthOffset = keepFrom;
+    const startYear = Number(CRIME_START.slice(0, 4));
+    meta.months = meta.months.slice(keepFrom);
+    meta.years = (meta.years || []).filter(y => Number(y) >= startYear);
+    for (const c of Object.values(meta.coverage || {})) if (c && c.first < CRIME_START) c.first = CRIME_START;
+    if (meta.qa) for (const y of Object.keys(meta.qa)) if (Number(y) < startYear) delete meta.qa[y];
     crime.meta = meta; crime.months = meta.months; crime.offs = meta.offenses;
     crime.areaRaw = await fetchJSON(CRIME_DIR + 'areas.json');
     const last = crime.months[crime.months.length - 1];
@@ -3281,7 +3296,10 @@ function areaMatrix(key) {
   const [k, v] = key.split(':');
   const flat = k === 'city' ? crime.areaRaw.city : (crime.areaRaw[k] || {})[v];
   const nm = crime.months.length, mat = new Float32Array(crime.offs.length * nm);
-  if (flat) for (let i = 0; i < flat.length; i += 3) mat[flat[i + 1] * nm + flat[i]] += flat[i + 2];
+  if (flat) for (let i = 0; i < flat.length; i += 3) {
+    const m = flat[i] - crime.monthOffset;
+    if (m >= 0 && m < nm) mat[flat[i + 1] * nm + m] += flat[i + 2];
+  }
   crime.areaMats.set(key, mat);
   return mat;
 }
@@ -3312,7 +3330,7 @@ async function segTotals(p, cat) {
   const years = await Promise.all(Array.from({ length: y1 - y0 + 1 }, (_, i) => loadCrimeYear(y0 + i)));
   const mask = catMask(cat), out = new Float64Array(crime.segs.seg_id.length);
   for (const rows of years) for (let i = 0; i < rows.length; i += 4) {
-    const m = rows[i + 1];
+    const m = rows[i + 1] - crime.monthOffset;
     if (m >= r.i0 && m <= r.i1 && mask[rows[i + 2]]) out[rows[i]] += rows[i + 3];
   }
   const res = { vals: out, n: r.n };
@@ -3355,7 +3373,10 @@ async function polygonMatrix(key, geometry, onProgress) {
   let done = 0;
   for (const y of crime.meta.years) {
     const rows = await loadCrimeYear(y);
-    for (let i = 0; i < rows.length; i += 4) if (flag[rows[i]]) mat[rows[i + 2] * nm + rows[i + 1]] += rows[i + 3];
+    for (let i = 0; i < rows.length; i += 4) {
+      const m = rows[i + 1] - crime.monthOffset;
+      if (flag[rows[i]] && m >= 0 && m < nm) mat[rows[i + 2] * nm + m] += rows[i + 3];
+    }
     onProgress && onProgress(++done, crime.meta.years.length);
   }
   crime.polyMatCache.set(key, mat);
@@ -4078,7 +4099,10 @@ async function initializeApp() {
   } catch { /* ignore */ }
   if (!restored) await loadBasePlan();
 
-  if (state.plan.areas.length) fitTo(state.plan.areas.map(a => a.layer));
+  // Start on Temple: the TU police boundary with some room around it.
+  const tuArea = state.layers.police && state.layers.police.leaflet;
+  if (tuArea && tuArea.getBounds().isValid()) map.fitBounds(tuArea.getBounds().pad(0.35), { padding: [18, 18] });
+  else if (state.plan.areas.length) fitTo(state.plan.areas.map(a => a.layer));
   else if (state.layers.city && state.layers.city.leaflet) fitTo([state.layers.city.leaflet]);
 
   resetHistory();
